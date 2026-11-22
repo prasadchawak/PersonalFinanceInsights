@@ -33,7 +33,7 @@ def store(conn: sqlite3.Connection, account_id: int, filename: str, file_hash: s
     for t in txns:
         payee = clean_payee(t.payee_raw)
         category_id = None
-        r = rules_mod.first_match(rules, account_id, t.payee_raw, t.memo)
+        r = rules_mod.first_match(rules, account_id, t.payee_raw, t.memo, t.amount_cents)
         if r:
             category_id = r["category_id"]
             payee = r["rename_to"] or payee

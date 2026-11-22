@@ -162,3 +162,30 @@ details.ruleedit[open] form { position: absolute; right: 1.5rem; z-index: 4; wid
   border: 1px solid var(--line); border-radius: 10px; padding: 1rem; box-shadow: 0 8px 28px rgba(0,0,0,.12); }
 table.rules td { vertical-align: middle; }
 .brand span { color: var(--accent); }
+
+/* ---------- multi-condition rules */
+fieldset.conds { border: 1px solid var(--line); border-radius: 8px; padding: .6rem .9rem .8rem; margin: 0 0 .9rem; }
+fieldset.conds legend { padding: 0 .4rem; color: var(--muted); font-size: .85rem; }
+.condrow { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin: .35rem 0; }
+.condrow .and { width: 2.2rem; text-align: right; color: var(--muted); font-size: .85rem; }
+.condrow input[name=t_value] { min-width: 220px; }
+.btn.small { font-size: .8rem; padding: .25rem .6rem; margin-left: 2.7rem; }
+b.and { font-size: .7rem; color: var(--muted); letter-spacing: .04em; }
+span.cond { white-space: nowrap; }
+details.newrule > summary { list-style: none; cursor: pointer; }
+details.newrule > summary h2 { display: inline; }
+details.newrule > summary::before { content: "＋ "; color: var(--accent); }
+details.newrule[open] > summary::before { content: "－ "; }
+details.newrule[open] > summary { margin-bottom: .8rem; }
+details.ruleedit[open] form { width: min(860px, 94vw); }
+
+/* ---------- sortable headers */
+th a.sort { color: var(--muted); }
+th a.sort:hover { color: var(--ink); text-decoration: none; }
+th a.sort.on { color: var(--ink); }
+.dangerzone { border-color: #e7b3ad; }
+@media (prefers-color-scheme: dark) { .dangerzone { border-color: #6b2e28; } }
+.dangerzone > summary { list-style: none; cursor: pointer; color: var(--neg); }
+.dangerzone > summary h2 { display: inline; }
+.delrow { margin: .5rem 0; }
+.delname { min-width: 15rem; }

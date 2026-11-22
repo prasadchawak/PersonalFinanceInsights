@@ -1,35 +1,75 @@
 {% extends "base.html" %}
 {% from "_macros.html" import cat_options %}
 {% block title %}Rules{% endblock %}
+
+{% macro rule_form(r=None) %}
+  {% set tconds = r.text_conds if r else ([{'field': 'text', 'op': 'contains', 'value': prefill.pattern}] if prefill.pattern else []) %}
+  <fieldset class="conds">
+    <legend>When <b>all</b> of these are true</legend>
+    <div class="condrows">
+      {% for i in range([tconds|length + 1, 2]|max) %}{% set c = tconds[i] if i < tconds|length else none %}
+      <div class="condrow">
+        <span class="and">{{ 'If' if loop.first else 'and' }}</span>
+        <select name="t_field">{% for k, label in text_fields %}<option value="{{ k }}" {{ 'selected' if c and c.field == k }}>{{ label }}</option>{% endfor %}</select>
+        <select name="t_op">{% for k, label in text_ops.items() %}<option value="{{ k }}" {{ 'selected' if c and c.op == k }}>{{ label }}</option>{% endfor %}</select>
+        <input name="t_value" value="{{ c.value if c }}" placeholder="text, e.g. COSTCO">
+      </div>
+      {% endfor %}
+    </div>
+    <button type="button" class="btn small addcond">+ another text condition</button>
+    {% set ac = r.amount_cond if r else none %}
+    <div class="condrow">
+      <span class="and">and</span>
+      <select name="amount_op" class="amountop">
+        <option value="">any amount</option>
+        {% for k, label in amount_ops.items() %}<option value="{{ k }}" {{ 'selected' if ac and ac.op == k }}>amount {{ label }}</option>{% endfor %}
+      </select>
+      <input name="amount_v" size="9" inputmode="decimal" placeholder="0.00" value="{{ '%.2f'|format(ac.value|int / 100) if ac }}">
+      <span class="v2 {{ 'hidden' if not (ac and ac.op == 'between') }}">and <input name="amount_v2" size="9" inputmode="decimal" placeholder="0.00"
+            value="{{ '%.2f'|format(ac.value2|int / 100) if ac and ac.value2 }}"></span>
+      <small class="muted">ignores sign</small>
+    </div>
+    <div class="condrow">
+      <span class="and">and</span>
+      <select name="direction">
+        <option value="">money in or out</option>
+        <option value="out" {{ 'selected' if r and r.direction == 'out' }}>money out (purchases, payments)</option>
+        <option value="in" {{ 'selected' if r and r.direction == 'in' }}>money in (deposits, refunds)</option>
+      </select>
+    </div>
+    <div class="condrow">
+      <span class="and">and</span>
+      <select name="account_id"><option value="">any account</option>
+        {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if r and a.id == r.account_id }}>account is {{ a.name }}</option>{% endfor %}</select>
+    </div>
+  </fieldset>
+  <div class="formgrid">
+    <label>Then set category
+      <select name="category_id"><option value="">— leave as is —</option>{{ cat_options(cat_list, r.category_id if r else prefill.category_id) }}</select></label>
+    <label>and rename payee to (optional) <input name="rename_to" value="{{ r.rename_to or '' if r }}" placeholder="e.g. Costco"></label>
+    <label>Priority <input type="number" name="priority" value="{{ r.priority if r else 100 }}" size="5"></label>
+    <label>After saving
+      <select name="reapply">
+        <option value="" {{ 'selected' if r }}>don't change existing transactions</option>
+        <option value="uncategorized" {{ 'selected' if not r }}>apply rules to uncategorised</option>
+        <option value="all">re-apply rules to all (except hand-set)</option></select></label>
+    <button class="btn primary">{{ 'Save rule' if r else 'Add rule' }}</button>
+  </div>
+{% endmacro %}
+
 {% block content %}
 <h1>Categorisation rules</h1>
-<p class="muted">Rules run on every import. The first match wins (lowest priority number first). They never overwrite a category you set by hand.</p>
+<p class="muted">Rules run on every import. The first match wins (lowest priority number first). They never overwrite a category you set by hand or a split.</p>
 {% if applied is not none %}<p class="notice">Rules updated {{ applied }} transaction{{ 's' if applied != 1 }}.</p>{% endif %}
-{% if saved %}<p class="notice">Rule saved. Use “re-run” below if you want it applied to existing transactions.</p>{% endif %}
+{% if saved %}<p class="notice">Rule saved.</p>{% endif %}
 {% if error %}<p class="error notice-err">{{ error }}</p>{% endif %}
 
-<section class="card">
-  <h2>New rule</h2>
-  <form method="post" action="/rules" class="formgrid">
-    <label>When description
-      <select name="match_type">
-        <option value="contains">contains</option><option value="starts_with">starts with</option>
-        <option value="equals">equals</option><option value="regex">matches regex</option>
-      </select></label>
-    <label>Text <input name="pattern" required value="{{ prefill.pattern }}"></label>
-    <label>Set category
-      <select name="category_id"><option value="">— leave as is —</option>
-        {{ cat_options(cat_list, prefill.category_id) }}</select></label>
-    <label>Rename payee to (optional) <input name="rename_to" placeholder="e.g. Costco"></label>
-    <label>Only for account
-      <select name="account_id"><option value="">any account</option>
-        {% for a in accounts %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select></label>
-    <label>Priority <input type="number" name="priority" value="100"></label>
-    <label class="check"><input type="checkbox" name="apply_now" checked> Apply to uncategorised transactions now</label>
-    <button class="btn primary">Add rule</button>
-  </form>
-  <p class="muted small">Tip: trim the text to the stable part — "COSTCO WHSE #0123 SEATTLE" works better as just "COSTCO".</p>
-</section>
+<details class="card newrule" {{ 'open' if prefill.pattern or not rules or (error and not edit) }}>
+  <summary><h2>New rule</h2></summary>
+  <form method="post" action="/rules">{{ rule_form() }}</form>
+  <p class="muted small">Example: description contains “AMAZON” <b>and</b> amount more than 200 <b>and</b> money out → Electronics.
+    Put specific rules at a lower priority number than general ones (e.g. 10 vs 100) so they win. For “either A or B”, make two rules.</p>
+</details>
 
 {% if rules %}
 <section class="card">
@@ -38,33 +78,16 @@
       <select name="scope"><option value="uncategorized">uncategorised only</option><option value="all">all (except hand-set)</option></select>
       <button class="btn">Re-run rules</button></form></div>
   <table class="rules">
-    <thead><tr><th>#</th><th>When</th><th>Then</th><th>Account</th><th class="num" title="Transactions this rule currently wins">Matches</th><th></th></tr></thead>
+    <thead><tr><th>#</th><th>When</th><th>Then</th><th class="num" title="Transactions this rule currently wins">Matches</th><th></th></tr></thead>
     {% for r in rules %}
     <tr><td>{{ r.priority }}</td>
-        <td>{{ r.match_type.replace('_',' ') }} <code>{{ r.pattern }}</code></td>
-        <td>{% if r.category_id in tree.by_id %}→ {{ tree.by_id[r.category_id].path }}{% endif %}{% if r.rename_to %} · rename “{{ r.rename_to }}”{% endif %}</td>
-        <td class="small">{{ r.account_name or 'any' }}</td>
+        <td>{% for s in r.summary %}{% if not loop.first %} <b class="and">AND</b> {% endif %}<span class="cond">{{ s }}</span>{% endfor %}
+            {% if r.account_name %} <b class="and">AND</b> <span class="cond">account is {{ r.account_name }}</span>{% endif %}</td>
+        <td>{% if r.category_id in tree.by_id %}→ {{ tree.by_id[r.category_id].path }}{% endif %}{% if r.rename_to %}<br><small class="muted">rename “{{ r.rename_to }}”</small>{% endif %}</td>
         <td class="num {{ 'muted' if not matches.get(r.id) }}">{{ matches.get(r.id, 0) }}</td>
         <td class="nowrap">
-          <details class="ruleedit"><summary class="btn">Edit</summary>
-            <form method="post" action="/rules/{{ r.id }}" class="formgrid">
-              <label>When description
-                <select name="match_type">{% for v, l in [('contains','contains'),('starts_with','starts with'),('equals','equals'),('regex','matches regex')] %}
-                  <option value="{{ v }}" {{ 'selected' if r.match_type == v }}>{{ l }}</option>{% endfor %}</select></label>
-              <label>Text <input name="pattern" value="{{ r.pattern }}" required></label>
-              <label>Set category
-                <select name="category_id"><option value="">— leave as is —</option>{{ cat_options(cat_list, r.category_id) }}</select></label>
-              <label>Rename payee to <input name="rename_to" value="{{ r.rename_to or '' }}"></label>
-              <label>Only for account
-                <select name="account_id"><option value="">any account</option>
-                  {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if a.id == r.account_id }}>{{ a.name }}</option>{% endfor %}</select></label>
-              <label>Priority <input type="number" name="priority" value="{{ r.priority }}"></label>
-              <label>After saving
-                <select name="reapply"><option value="">don't change existing transactions</option>
-                  <option value="uncategorized">apply rules to uncategorised</option>
-                  <option value="all">re-apply rules to all (except hand-set)</option></select></label>
-              <button class="btn primary">Save rule</button>
-            </form>
+          <details class="ruleedit" {{ 'open' if edit == r.id }}><summary class="btn">Edit</summary>
+            <form method="post" action="/rules/{{ r.id }}">{{ rule_form(r) }}</form>
           </details>
           <form method="post" action="/rules/{{ r.id }}/delete" class="inline confirm" data-confirm="Delete this rule? Transactions it already categorised keep their category."><button class="btn danger">Delete</button></form>
         </td></tr>

@@ -104,6 +104,17 @@ CREATE TABLE IF NOT EXISTS budgets (
     UNIQUE (category_id, month)
 );
 
+-- Every condition of a rule must match (AND). See rules.py for the fields.
+CREATE TABLE IF NOT EXISTS rule_conditions (
+    id INTEGER PRIMARY KEY,
+    rule_id INTEGER NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
+    field TEXT NOT NULL CHECK (field IN ('text','payee','memo','amount','direction')),
+    op TEXT NOT NULL,
+    value TEXT NOT NULL,
+    value2 TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_rule_cond ON rule_conditions(rule_id);
+
 CREATE TABLE IF NOT EXISTS rules (
     id INTEGER PRIMARY KEY,
     priority INTEGER NOT NULL DEFAULT 100,  -- lower runs first; first match wins
@@ -185,6 +196,10 @@ def init(conn: sqlite3.Connection) -> None:
     _migrate(conn)
     conn.executescript(SCHEMA)
     conn.executescript(LINES_VIEW)
+    # Rules made before conditions existed: turn their single text test into a condition.
+    conn.execute("""INSERT INTO rule_conditions(rule_id, field, op, value)
+                    SELECT id, 'text', match_type, pattern FROM rules r
+                    WHERE pattern != '' AND NOT EXISTS (SELECT 1 FROM rule_conditions c WHERE c.rule_id = r.id)""")
     if conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == 0:
         for name, kind, children in DEFAULT_CATEGORIES:
             pid = conn.execute("INSERT INTO categories(name, kind) VALUES (?, ?)", (name, kind)).lastrowid

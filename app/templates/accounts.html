@@ -38,5 +38,20 @@
   </table>
 </section>
 <p class="muted small">Renaming an account keeps all its transactions, rules and import history.</p>
+
+<details class="card dangerzone">
+  <summary><h2 class="inline">Delete an account</h2></summary>
+  <p>This permanently removes the account and <b>everything</b> in it: its transactions (including splits), its import history,
+     and any rules limited to that account. It can't be undone, so run <code>backup.bat</code> first if you might want it back.
+     Categories, budgets and rules for all accounts are kept.</p>
+  {% for a in accounts %}
+  <form method="post" action="/accounts/{{ a.id }}/delete" class="row delrow confirm"
+        data-confirm="Permanently delete “{{ a.name }}” and its {{ a.tx_count }} transaction(s)? This can't be undone.">
+    <span class="delname"><b>{{ a.name }}</b> <small class="muted">{{ a.tx_count }} transactions</small></span>
+    <input name="confirm_name" placeholder="type “{{ a.name }}” to confirm" autocomplete="off" size="28" required>
+    <button class="btn danger">Delete account</button>
+  </form>
+  {% endfor %}
+</details>
 {% endif %}
 {% endblock %}

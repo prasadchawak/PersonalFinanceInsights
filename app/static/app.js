@@ -55,3 +55,21 @@ document.addEventListener("submit", (e) => {
   });
   recalc();
 })();
+
+// Rule editor: add text-condition rows; show the second amount box only for "between".
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest && e.target.closest(".addcond");
+  if (!btn) return;
+  const rows = btn.parentElement.querySelector(".condrows");
+  const last = rows.lastElementChild.cloneNode(true);
+  last.querySelector("input").value = "";
+  last.querySelector(".and").textContent = "and";
+  rows.appendChild(last);
+  last.querySelector("input").focus();
+});
+document.addEventListener("change", (e) => {
+  if (e.target.classList && e.target.classList.contains("amountop")) {
+    const v2 = e.target.parentElement.querySelector(".v2");
+    if (v2) v2.classList.toggle("hidden", e.target.value !== "between");
+  }
+});

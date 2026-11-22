@@ -197,6 +197,27 @@ def edit_account(account_id: int, name: str = Form(...), institution: str = Form
     return RedirectResponse("/accounts?msg=" + quote("Saved."), status_code=303)
 
 
+@app.post("/accounts/{account_id}/delete")
+def delete_account(account_id: int, confirm_name: str = Form("")):
+    """Permanently delete an account with all its transactions, splits, import history and
+    account-specific rules. Requires typing the account's name."""
+    from urllib.parse import quote
+    with conn() as c:
+        acct = c.execute("SELECT name FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        if not acct:
+            raise HTTPException(404)
+        if confirm_name.strip() != acct["name"]:
+            return RedirectResponse("/accounts?error=" + quote(f"Type the account name exactly (“{acct['name']}”) to delete it."),
+                                    status_code=303)
+        n = c.execute("SELECT COUNT(*) FROM transactions WHERE account_id = ?", (account_id,)).fetchone()[0]
+        c.execute("DELETE FROM transactions WHERE account_id = ?", (account_id,))   # splits cascade
+        c.execute("DELETE FROM imports WHERE account_id = ?", (account_id,))
+        c.execute("DELETE FROM rules WHERE account_id = ?", (account_id,))          # conditions cascade
+        c.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+    return RedirectResponse("/accounts?msg=" + quote(f"Deleted “{acct['name']}” and its {n} transaction{'s' if n != 1 else ''}."),
+                            status_code=303)
+
+
 @app.post("/accounts/{account_id}/opening")
 def set_opening(account_id: int, opening_balance: str = Form(...)):
     from .normalize import parse_amount_cents
@@ -372,27 +393,47 @@ def _tx_filters(conn_, account, category, month, q, start=None, end=None):
     return (" WHERE " + " AND ".join(where)) if where else "", args
 
 
+# Sortable columns: SQL (direction filled in) and the natural first direction when you click a header.
+_CAT_PATH = ("CASE WHEN EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id) THEN '~split' "
+             "ELSE COALESCE(c3.name || '/' || c2.name || '/' || c1.name, c2.name || '/' || c1.name, c1.name, '~~') END")
+SORTS = {
+    "date": ("t.posted_date {d}", "desc"),
+    "payee": ("t.payee COLLATE NOCASE {d}, t.posted_date DESC", "asc"),
+    "account": ("a.name COLLATE NOCASE {d}, t.posted_date DESC", "asc"),
+    "category": (_CAT_PATH + " COLLATE NOCASE {d}, t.posted_date DESC", "asc"),
+    "amount": ("t.amount_cents {d}", "asc"),   # asc = biggest spending first
+}
+
+
 @app.get("/transactions", response_class=HTMLResponse)
 def transactions(request: Request, account: str | None = None, category: str | None = None,
                  month: str | None = None, q: str | None = None, start: str | None = None,
-                 end: str | None = None, page: str | None = None, updated: str | None = None):
+                 end: str | None = None, page: str | None = None, updated: str | None = None,
+                 sort: str = "date", dir: str | None = None):
     page = max(_int(page) or 1, 1)
+    sort = sort if sort in SORTS else "date"
+    dir = dir if dir in ("asc", "desc") else SORTS[sort][1]
     with conn() as c:
         tree = cats.load(c)
         where, args = _tx_filters(c, account, category, month, q, start, end)
         total, total_cents = c.execute(
             f"SELECT COUNT(*), COALESCE(SUM(t.amount_cents),0) FROM transactions t{where}", args).fetchone()
+        order = SORTS[sort][0].format(d=dir.upper())
         txns = c.execute(f"""SELECT t.*, a.name AS account_name
-                             FROM transactions t JOIN accounts a ON a.id = t.account_id{where}
-                             ORDER BY t.posted_date DESC, t.id DESC LIMIT ? OFFSET ?""",
+                             FROM transactions t JOIN accounts a ON a.id = t.account_id
+                             LEFT JOIN categories c1 ON c1.id = t.category_id
+                             LEFT JOIN categories c2 ON c2.id = c1.parent_id
+                             LEFT JOIN categories c3 ON c3.id = c2.parent_id{where}
+                             ORDER BY {order}, t.id {dir.upper()} LIMIT ? OFFSET ?""",
                          (*args, PAGE_SIZE, (page - 1) * PAGE_SIZE)).fetchall()
         accounts = c.execute("SELECT id, name FROM accounts ORDER BY name").fetchall()
         split_map = splits.for_transactions(c, [t["id"] for t in txns])
     f = {"account": _int(account), "category": category or "", "month": month or "", "q": q or "",
-         "start": start or "", "end": end or ""}
+         "start": start or "", "end": end or "", "sort": sort, "dir": dir}
     return render(request, "transactions.html", txns=txns, accounts=accounts, cat_list=tree.ordered(),
                   tree=tree, f=f, total=total, total_cents=total_cents, page=page,
-                  pages=max(1, -(-total // PAGE_SIZE)), updated=_int(updated), split_map=split_map)
+                  pages=max(1, -(-total // PAGE_SIZE)), updated=_int(updated), split_map=split_map,
+                  sort_defaults={k: v[1] for k, v in SORTS.items()})
 
 
 @app.post("/transactions/bulk")
@@ -687,55 +728,71 @@ def reports_page(request: Request, report: str = "spending", period: str = "6m",
 
 @app.get("/rules", response_class=HTMLResponse)
 def rules_page(request: Request, pattern: str = "", category_id: str | None = None, applied: str | None = None,
-               saved: str | None = None, error: str | None = None):
+               saved: str | None = None, error: str | None = None, edit: str | None = None):
     with conn() as c:
         tree = cats.load(c)
-        rules = c.execute("""SELECT r.*, a.name AS account_name FROM rules r
-                             LEFT JOIN accounts a ON a.id = r.account_id
-                             ORDER BY r.priority, r.id""").fetchall()
+        rules = rules_mod.load(c)
+        names = dict(c.execute("SELECT id, name FROM accounts").fetchall())
         accounts = c.execute("SELECT id, name FROM accounts ORDER BY name").fetchall()
-        c_rules = rules_mod.match_counts(c)
+        matches = rules_mod.match_counts(c)
+    for r in rules:
+        r["account_name"] = names.get(r["account_id"])
+        r["summary"] = [rules_mod.describe(x) for x in r["conds"]]
+        r["text_conds"] = [x for x in r["conds"] if x["field"] in rules_mod.TEXT_FIELDS]
+        r["amount_cond"] = next((x for x in r["conds"] if x["field"] == "amount"), None)
+        r["direction"] = next((x["value"] for x in r["conds"] if x["field"] == "direction"), "")
     return render(request, "rules.html", rules=rules, cat_list=tree.ordered(), tree=tree, accounts=accounts,
                   prefill={"pattern": pattern, "category_id": _int(category_id)}, applied=_int(applied),
-                  saved=saved, error=error, matches=c_rules)
+                  saved=saved, error=error, matches=matches, edit=_int(edit),
+                  text_fields=[(k, rules_mod.FIELD_LABELS[k]) for k in rules_mod.TEXT_FIELDS],
+                  text_ops=rules_mod.TEXT_OPS, amount_ops=rules_mod.AMOUNT_OPS)
+
+
+def _conds_from_form(form) -> list[dict]:
+    """Text rows (t_field/t_op/t_value, repeatable) + one amount test + one direction test, all ANDed."""
+    from .normalize import parse_amount_cents
+    conds = []
+    if form.get("pattern"):  # older single-condition form fields
+        conds.append({"field": "text", "op": form.get("match_type") or "contains", "value": form.get("pattern")})
+    for f, op, v in zip(form.getlist("t_field"), form.getlist("t_op"), form.getlist("t_value")):
+        conds.append({"field": f, "op": op, "value": v})
+    a_op, a_v, a_v2 = form.get("amount_op") or "", (form.get("amount_v") or "").strip(), (form.get("amount_v2") or "").strip()
+    if a_op and a_v:
+        try:
+            v1 = parse_amount_cents(a_v)
+            v2 = parse_amount_cents(a_v2) if a_v2 else None
+        except ValueError:
+            raise rules_mod.RuleError("Amounts must be numbers, e.g. 100 or 49.99.")
+        conds.append({"field": "amount", "op": a_op, "value": v1, "value2": v2})
+    if form.get("direction") in ("in", "out"):
+        conds.append({"field": "direction", "op": "is", "value": form.get("direction")})
+    return conds
+
+
+async def _save_rule(request: Request, rule_id: int | None):
+    from urllib.parse import quote
+    form = await request.form()
+    try:
+        with conn() as c:
+            rules_mod.save(c, rule_id, _conds_from_form(form), _int(form.get("category_id")),
+                           (form.get("rename_to") or "").strip() or None, _int(form.get("account_id")),
+                           _int(form.get("priority")) or 100)
+            reapply = form.get("reapply") or ("uncategorized" if form.get("apply_now") else "")
+            n = rules_mod.apply_all(c, only_uncategorized=(reapply != "all")) if reapply else None
+    except rules_mod.RuleError as e:
+        back_to = f"/rules?error={quote(str(e))}" + (f"&edit={rule_id}" if rule_id else "")
+        return RedirectResponse(back_to, status_code=303)
+    return RedirectResponse(f"/rules?applied={n}" if n is not None else "/rules?saved=1", status_code=303)
 
 
 @app.post("/rules")
-def create_rule(match_type: str = Form("contains"), pattern: str = Form(...), category_id: str = Form(""),
-                rename_to: str = Form(""), account_id: str = Form(""), priority: str = Form("100"),
-                apply_now: str = Form(None)):
-    if match_type not in ("contains", "starts_with", "equals", "regex"):
-        raise HTTPException(400)
-    if not _int(category_id) and not rename_to.strip():
-        raise HTTPException(400, "A rule needs a category or a rename")
-    with conn() as c:
-        c.execute("INSERT INTO rules(priority, match_type, pattern, account_id, category_id, rename_to)"
-                  " VALUES (?,?,?,?,?,?)",
-                  (_int(priority) or 100, match_type, pattern.strip(), _int(account_id), _int(category_id),
-                   rename_to.strip() or None))
-        n = rules_mod.apply_all(c) if apply_now else None
-    return RedirectResponse(f"/rules?applied={n}" if n is not None else "/rules", status_code=303)
+async def create_rule(request: Request):
+    return await _save_rule(request, None)
 
 
 @app.post("/rules/{rule_id}")
-def update_rule(rule_id: int, match_type: str = Form("contains"), pattern: str = Form(...),
-                category_id: str = Form(""), rename_to: str = Form(""), account_id: str = Form(""),
-                priority: str = Form("100"), reapply: str = Form(None)):
-    if match_type not in ("contains", "starts_with", "equals", "regex"):
-        raise HTTPException(400)
-    if not _int(category_id) and not rename_to.strip():
-        raise HTTPException(400, "A rule needs a category or a rename")
-    if match_type == "regex":
-        try:
-            re.compile(pattern)
-        except re.error:
-            return RedirectResponse("/rules?error=That+regex+isn%27t+valid", status_code=303)
-    with conn() as c:
-        c.execute("UPDATE rules SET match_type=?, pattern=?, category_id=?, rename_to=?, account_id=?, priority=?"
-                  " WHERE id=?", (match_type, pattern.strip(), _int(category_id), rename_to.strip() or None,
-                                  _int(account_id), _int(priority) or 100, rule_id))
-        n = rules_mod.apply_all(c, only_uncategorized=(reapply != "all")) if reapply else None
-    return RedirectResponse(f"/rules?applied={n}" if n is not None else "/rules?saved=1", status_code=303)
+async def update_rule(request: Request, rule_id: int):
+    return await _save_rule(request, rule_id)
 
 
 @app.post("/rules/{rule_id}/delete")

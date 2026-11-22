@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% from "_macros.html" import cat_options %}
 {% block title %}Transactions{% endblock %}
+{% macro sorth(key, label, num=False) -%}
+  {%- set on = f.sort == key -%}
+  {%- set nd = ('asc' if f.dir == 'desc' else 'desc') if on else sort_defaults[key] -%}
+  <th class="{{ 'num' if num }}"><a class="sort {{ 'on' if on }}" title="Sort by {{ label|lower }}"
+     href="?{% for k, v in request.query_params.items() if k not in ('sort','dir','page','updated') %}{{ k }}={{ v|urlencode }}&{% endfor %}sort={{ key }}&dir={{ nd }}">{{ label }}{% if on %} {{ '▲' if f.dir == 'asc' else '▼' }}{% endif %}</a></th>
+{%- endmacro %}
 {% block content %}
 <div class="row between">
   <h1>Transactions</h1>
@@ -16,6 +22,7 @@
   <input type="month" name="month" value="{{ f.month }}" class="autosubmit" title="Month">
   {% if f.start %}<input type="hidden" name="start" value="{{ f.start }}">{% endif %}
   {% if f.end %}<input type="hidden" name="end" value="{{ f.end }}">{% endif %}
+  <input type="hidden" name="sort" value="{{ f.sort }}"><input type="hidden" name="dir" value="{{ f.dir }}">
   <input type="search" name="q" value="{{ f.q }}" placeholder="Search payee, memo, notes">
   <button class="btn">Filter</button>
   {% if request.url.query %}<a href="/transactions" class="btn">Clear</a>{% endif %}
@@ -46,7 +53,7 @@
 <table class="tx">
   <thead><tr>
     <th class="cb"><input type="checkbox" class="selall" title="Select all on this page"></th>
-    <th>Date</th><th>Payee</th><th>Account</th><th>Category</th><th class="num">Amount</th><th></th></tr></thead>
+    {{ sorth('date', 'Date') }}{{ sorth('payee', 'Payee') }}{{ sorth('account', 'Account') }}{{ sorth('category', 'Category') }}{{ sorth('amount', 'Amount', True) }}<th></th></tr></thead>
   {% for t in txns %}
   {% set cat = tree.by_id.get(t.category_id) %}
   <tr class="{{ 'uncat' if not t.category_id and not split_map.get(t.id) }}">
