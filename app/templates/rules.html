@@ -44,6 +44,8 @@
     <label>Then set category
       <select name="category_id"><option value="">— leave as is —</option>{{ cat_options(cat_list, r.category_id if r else prefill.category_id) }}</select></label>
     <label>and rename payee to (optional) <input name="rename_to" value="{{ r.rename_to or '' if r }}" placeholder="e.g. Costco"></label>
+    <label class="check" title="Matching transactions are not counted in reports or budgets (balances still are)">
+      <input type="checkbox" name="set_excluded" {{ 'checked' if r and r.set_excluded }}> and ⊘ exclude from reports &amp; budgets</label>
     <label>Priority <input type="number" name="priority" value="{{ r.priority if r else 100 }}" size="5"></label>
     <label>After saving
       <select name="reapply">
@@ -84,7 +86,7 @@
     <tr><td>{{ r.priority }}</td>
         <td>{% for s in r.summary %}{% if not loop.first %} <b class="and">AND</b> {% endif %}<span class="cond">{{ s }}</span>{% endfor %}
             {% if r.account_name %} <b class="and">AND</b> <span class="cond">account is {{ r.account_name }}</span>{% endif %}</td>
-        <td>{% if r.category_id in tree.by_id %}→ {{ tree.by_id[r.category_id].path }}{% endif %}{% if r.rename_to %}<br><small class="muted">rename “{{ r.rename_to }}”</small>{% endif %}</td>
+        <td>{% if r.category_id in tree.by_id %}→ {{ tree.by_id[r.category_id].path }}{% endif %}{% if r.rename_to %}<br><small class="muted">rename “{{ r.rename_to }}”</small>{% endif %}{% if r.set_excluded %}<br><span class="excltag">⊘ exclude from reports</span>{% endif %}</td>
         {% set m = matches.get(r.id, {'wins': 0, 'shadowed': 0, 'blockers': {}}) %}
         <td class="num {{ 'muted' if not m.wins }}">{{ m.wins }}
           {% if m.shadowed %}<br><small class="shadow" title="Also matches these, but an earlier rule wins: {% for k, v in m.blockers.items() %}{{ k }} ({{ v }}){{ '; ' if not loop.last }}{% endfor %}">

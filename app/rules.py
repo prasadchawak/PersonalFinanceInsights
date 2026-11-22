@@ -159,19 +159,22 @@ def validate_conditions(conds: list[dict]) -> list[dict]:
     return out
 
 
-def save(conn, rule_id: int | None, conds: list[dict], category_id, rename_to, account_id, priority) -> int:
-    if not category_id and not rename_to:
-        raise RuleError("A rule needs a category or a rename.")
+def save(conn, rule_id: int | None, conds: list[dict], category_id, rename_to, account_id, priority,
+         set_excluded: bool = False) -> int:
+    if not category_id and not rename_to and not set_excluded:
+        raise RuleError("A rule needs to do something: set a category, rename the payee, or exclude from reports.")
     conds = validate_conditions(conds)
     first_text = next((c for c in conds if c["field"] in TEXT_FIELDS and c["op"] != "not_contains"), None)
     # match_type/pattern are kept as a readable summary of the main text condition.
     mt, pat = (first_text["op"], first_text["value"]) if first_text else ("contains", "")
     if rule_id is None:
-        rule_id = conn.execute("INSERT INTO rules(priority, match_type, pattern, account_id, category_id, rename_to)"
-                               " VALUES (?,?,?,?,?,?)", (priority, mt, pat, account_id, category_id, rename_to)).lastrowid
+        rule_id = conn.execute("INSERT INTO rules(priority, match_type, pattern, account_id, category_id, rename_to,"
+                               " set_excluded) VALUES (?,?,?,?,?,?,?)",
+                               (priority, mt, pat, account_id, category_id, rename_to, int(bool(set_excluded)))).lastrowid
     else:
-        conn.execute("UPDATE rules SET priority=?, match_type=?, pattern=?, account_id=?, category_id=?, rename_to=?"
-                     " WHERE id=?", (priority, mt, pat, account_id, category_id, rename_to, rule_id))
+        conn.execute("UPDATE rules SET priority=?, match_type=?, pattern=?, account_id=?, category_id=?, rename_to=?,"
+                     " set_excluded=? WHERE id=?",
+                     (priority, mt, pat, account_id, category_id, rename_to, int(bool(set_excluded)), rule_id))
         conn.execute("DELETE FROM rule_conditions WHERE rule_id = ?", (rule_id,))
     conn.executemany("INSERT INTO rule_conditions(rule_id, field, op, value, value2) VALUES (?,?,?,?,?)",
                      [(rule_id, c["field"], c["op"], c["value"], c["value2"]) for c in conds])
@@ -199,6 +202,8 @@ def apply_all(conn: sqlite3.Connection, only_uncategorized: bool = True, include
             sets.append("category_locked = 0")
         if r["rename_to"]:
             sets.append("payee = ?"); args.append(r["rename_to"])
+        if r.get("set_excluded"):
+            sets.append("excluded = 1")
         if sets:
             conn.execute(f"UPDATE transactions SET {', '.join(sets)} WHERE id = ?", (*args, tx["id"]))
             changed += 1

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Organisations{% endblock %}
+{% block content %}
+<h1>Organisations</h1>
+{% if error %}<p class="error notice-err">{{ error }}</p>{% endif %}
+{% if msg %}<p class="notice">{{ msg }}</p>{% endif %}
+<p class="muted">Each organisation is a completely separate set of accounts, transactions, categories, rules and budgets,
+  stored in <b>its own database file</b>. Use them for different people, or to keep groups of bank, card and loan accounts apart.
+  Switch with the menu at the top right. The list of organisations is kept in its own small file, <code>data/orgs.db</code>,
+  which holds only names and file locations.</p>
+
+<section class="card">
+  <h2>New organisation</h2>
+  <form method="post" action="/orgs" class="formgrid">
+    <label>Name <input name="name" required maxlength="60" placeholder="e.g. Household, Mom &amp; Dad, Rental property"></label>
+    <button class="btn primary">Create and open</button>
+  </form>
+  <p class="muted small">It starts empty with the default category tree.</p>
+</section>
+
+<section class="card flush">
+  <table>
+    <thead><tr><th>Organisation</th><th class="num">Accounts</th><th class="num">Transactions</th><th>Database file</th><th></th></tr></thead>
+    {% for r in rows %}{% set o = r.org %}
+    <tr class="{{ 'current' if o.id == current_org.id }}">
+      <td><form method="post" action="/orgs/{{ o.id }}/rename" class="inline">
+            <input name="name" value="{{ o.name }}" size="20" required maxlength="60"><button class="btn">Rename</button></form>
+          {% if o.id == current_org.id %}<small class="pos"> ● open now</small>{% endif %}</td>
+      <td class="num">{{ r.accounts }}</td>
+      <td class="num">{{ r.transactions }}</td>
+      <td class="small"><code>data/{{ o.db_file }}</code> <span class="muted">{{ r.size_kb }} KB</span></td>
+      <td>{% if o.id != current_org.id %}<form method="post" action="/orgs/switch" class="inline">
+            <input type="hidden" name="org_id" value="{{ o.id }}"><button class="btn">Open</button></form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+
+{% if rows|length > 1 %}
+<details class="card dangerzone">
+  <summary><h2>Remove an organisation</h2></summary>
+  <p>Removes it from the app. Its database file is <b>moved</b> to <code>data/deleted/</code>, not erased, so you can recover it by hand.
+     Delete that file yourself when you're sure.</p>
+  {% for r in rows %}{% set o = r.org %}
+  <form method="post" action="/orgs/{{ o.id }}/delete" class="row delrow confirm"
+        data-confirm="Remove “{{ o.name }}” ({{ r.accounts }} accounts, {{ r.transactions }} transactions) from the app?">
+    <span class="delname"><b>{{ o.name }}</b></span>
+    <input name="confirm_name" placeholder="type “{{ o.name }}” to confirm" autocomplete="off" size="28" required>
+    <button class="btn danger">Remove</button>
+  </form>
+  {% endfor %}
+</details>
+{% endif %}
+{% endblock %}

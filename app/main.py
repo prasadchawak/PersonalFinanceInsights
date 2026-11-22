@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import budgets as budgets_mod, categories as cats, charts, db, reports, rules as rules_mod, services, splits
+from . import budgets as budgets_mod, categories as cats, charts, db, orgs, reports, rules as rules_mod, services, splits
 from .importers import csv_import, ofx
 from .normalize import DATE_FORMATS, header_fingerprint
 
@@ -26,8 +26,9 @@ PAGE_SIZE = 100
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.adopt_legacy_db()
-    with db.connect() as conn:
-        db.init(conn)
+    orgs.ensure()
+    for o in orgs.all_orgs():
+        db.ensure_initialised(orgs.path_of(o))
     STAGING.mkdir(parents=True, exist_ok=True)
     yield
 
@@ -48,6 +49,7 @@ templates.env.filters["money"] = money
 
 
 _ALLOWED_HOSTS = {"127.0.0.1", "localhost", "testserver"}
+ORG_COOKIE = "pfi_org"
 
 
 @app.middleware("http")
@@ -72,7 +74,16 @@ async def security_headers(request: Request, call_next):
             allowed = origin is None  # non-browser clients (tests, curl) send neither header
         if not allowed:
             return PlainTextResponse("Cross-site request blocked", status_code=403)
-    resp = await call_next(request)
+    # Which organisation this request works on: chosen in the header switcher, kept in a cookie.
+    org = orgs.resolve(request.cookies.get(ORG_COOKIE))
+    org_path = orgs.path_of(org)
+    db.ensure_initialised(org_path)
+    request.state.org = org
+    token = db.current_db.set(org_path)
+    try:
+        resp = await call_next(request)
+    finally:
+        db.current_db.reset(token)
     # Nothing on these pages may load from or send to anywhere else.
     resp.headers["Content-Security-Policy"] = (
         "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; "
@@ -89,6 +100,8 @@ def conn():
 
 
 def render(request: Request, name: str, **ctx):
+    ctx.setdefault("current_org", getattr(request.state, "org", None))
+    ctx.setdefault("all_orgs", orgs.all_orgs())
     return templates.TemplateResponse(request, name, ctx)
 
 
@@ -116,8 +129,9 @@ def dashboard(request: Request, month: str | None = None):
         summary = services.month_summary(c, month)
         spending = charts.fold(reports.category_totals(c, m_start, m_end, "expense", level=1))
         trend = reports.income_vs_expense(c, reports._month_start(date(y, m, 1), 5).isoformat(), m_end)
-        uncategorized = c.execute("SELECT COUNT(DISTINCT tx_id) FROM tx_lines WHERE category_id IS NULL").fetchone()[0]
+        uncategorized = c.execute("SELECT COUNT(DISTINCT tx_id) FROM report_lines WHERE category_id IS NULL").fetchone()[0]
         budget = budgets_mod.overview(c, month)
+        excluded = reports.excluded_summary(c, m_start, m_end)
         for r in budget["rows"]:
             r["bar"] = charts.progress(r["spent"], r["budget"], width=160) if r["budget"] else None
         months = [r[0] for r in c.execute(
@@ -130,7 +144,7 @@ def dashboard(request: Request, month: str | None = None):
         {"name": "Income", "cls": "s1", "values": [d["income"] for d in trend]},
         {"name": "Expenses", "cls": "s2", "values": [d["expense"] for d in trend]}], height=240)
     return render(request, "dashboard.html", accounts=accounts, summary=summary, month=month, months=months,
-                  uncategorized=uncategorized, budget=budget, assets=assets, debts=debts, spending=spending,
+                  uncategorized=uncategorized, budget=budget, excluded=excluded, assets=assets, debts=debts, spending=spending,
                   pie=charts.donut(spending, size=240), trend_chart=trend_chart, m_start=m_start, m_end=m_end)
 
 
@@ -278,7 +292,8 @@ async def upload(request: Request, account_id: int = Form(...), file: UploadFile
     token = secrets.token_urlsafe(16)
     (STAGING / f"{token}.csv").write_text(text, encoding="utf-8")
     (STAGING / f"{token}.json").write_text(json.dumps({"account_id": account_id, "filename": filename,
-                                                       "sha256": services.sha256(data)}))
+                                                       "sha256": services.sha256(data),
+                                                       "org_db": str(db.current_db.get())}))
     return RedirectResponse(f"/import/map/{token}", status_code=303)
 
 
@@ -289,6 +304,9 @@ def _staged(token: str):
     if not p.exists():
         raise HTTPException(404, "That upload expired; please upload it again")
     meta = json.loads((STAGING / f"{token}.json").read_text())
+    if meta.get("org_db") and meta["org_db"] != str(db.current_db.get()):
+        raise HTTPException(409, "This upload was started in a different organisation. Switch back to it, "
+                                 "or upload the file again here.")
     return csv_import.read_rows(p.read_text(encoding="utf-8")), meta
 
 
@@ -395,7 +413,7 @@ def _looks_like_amount(q: str) -> bool:
 
 
 def _tx_filters(conn_, account, category, month, q, start=None, end=None, amt_op=None, amt=None, amt2=None,
-                flow=None):
+                flow=None, excl=None):
     where, args = [], []
     account = _int(account)
     if account:
@@ -430,6 +448,11 @@ def _tx_filters(conn_, account, category, month, q, start=None, end=None, amt_op
         where.append("t.amount_cents < 0")
     elif flow == "in":
         where.append("t.amount_cents > 0")
+    # Left out of reports & budgets — by the transaction's own flag or by its category.
+    if excl == "only":
+        where.append("t.id IN (SELECT tx_id FROM tx_lines WHERE excluded = 1)")
+    elif excl == "hide":
+        where.append("t.id NOT IN (SELECT tx_id FROM tx_lines WHERE excluded = 1)")
     return (" WHERE " + " AND ".join(where)) if where else "", args
 
 
@@ -450,13 +473,13 @@ def transactions(request: Request, account: str | None = None, category: str | N
                  month: str | None = None, q: str | None = None, start: str | None = None,
                  end: str | None = None, page: str | None = None, updated: str | None = None,
                  sort: str = "date", dir: str | None = None, amt_op: str | None = None, amt: str | None = None,
-                 amt2: str | None = None, flow: str | None = None):
+                 amt2: str | None = None, flow: str | None = None, excl: str | None = None):
     page = max(_int(page) or 1, 1)
     sort = sort if sort in SORTS else "date"
     dir = dir if dir in ("asc", "desc") else SORTS[sort][1]
     with conn() as c:
         tree = cats.load(c)
-        where, args = _tx_filters(c, account, category, month, q, start, end, amt_op, amt, amt2, flow)
+        where, args = _tx_filters(c, account, category, month, q, start, end, amt_op, amt, amt2, flow, excl)
         total, total_cents = c.execute(
             f"SELECT COUNT(*), COALESCE(SUM(t.amount_cents),0) FROM transactions t{where}", args).fetchone()
         order = SORTS[sort][0].format(d=dir.upper())
@@ -469,34 +492,47 @@ def transactions(request: Request, account: str | None = None, category: str | N
                          (*args, PAGE_SIZE, (page - 1) * PAGE_SIZE)).fetchall()
         accounts = c.execute("SELECT id, name FROM accounts ORDER BY name").fetchall()
         split_map = splits.for_transactions(c, [t["id"] for t in txns])
+        page_ids = [t["id"] for t in txns] or [-1]
+        excluded_ids = {r[0] for r in c.execute(
+            f"SELECT DISTINCT tx_id FROM tx_lines WHERE excluded = 1 AND tx_id IN ({','.join('?' * len(page_ids))})",
+            page_ids)}
+        excl_n, excl_cents = c.execute(
+            f"SELECT COUNT(*), COALESCE(SUM(t.amount_cents), 0) FROM transactions t{where}"
+            f"{' AND' if where else ' WHERE'} t.id IN (SELECT tx_id FROM tx_lines WHERE excluded = 1)", args).fetchone()
     f = {"account": _int(account), "category": category or "", "month": month or "", "q": q or "",
          "start": start or "", "end": end or "", "sort": sort, "dir": dir, "amt_op": amt_op or "",
-         "amt": amt or "", "amt2": amt2 or "", "flow": flow or ""}
+         "amt": amt or "", "amt2": amt2 or "", "flow": flow or "", "excl": excl or ""}
     return render(request, "transactions.html", txns=txns, accounts=accounts, cat_list=tree.ordered(),
                   tree=tree, f=f, total=total, total_cents=total_cents, page=page,
                   pages=max(1, -(-total // PAGE_SIZE)), updated=_int(updated), split_map=split_map,
-                  sort_defaults={k: v[1] for k, v in SORTS.items()}, amount_ops=AMOUNT_FILTER_OPS)
+                  sort_defaults={k: v[1] for k, v in SORTS.items()}, amount_ops=AMOUNT_FILTER_OPS,
+                  excluded_ids=excluded_ids, excl_n=excl_n, excl_cents=excl_cents)
 
 
 @app.post("/transactions/bulk")
 async def bulk_update(request: Request):
     """Set one category on many transactions: the ticked ones, or everything matching the current filter."""
     form = await request.form()
+    action = form.get("action") or "category"
     category_id = _int(form.get("category_id"))
     clear = form.get("category_id") == "none"
-    if category_id is None and not clear:
+    if action == "category" and category_id is None and not clear:
         return back(request, "/transactions")
     with conn() as c:
         if form.get("scope") == "filter":
             where, args = _tx_filters(c, form.get("f_account"), form.get("f_category"), form.get("f_month"),
                                       form.get("f_q"), form.get("f_start"), form.get("f_end"), form.get("f_amt_op"),
-                                      form.get("f_amt"), form.get("f_amt2"), form.get("f_flow"))
+                                      form.get("f_amt"), form.get("f_amt2"), form.get("f_flow"), form.get("f_excl"))
             ids = [r[0] for r in c.execute(f"SELECT t.id FROM transactions t{where}", args)]
         else:
             ids = [i for i in (_int(v) for v in form.getlist("ids")) if i]
         for chunk in range(0, len(ids), 500):
             part = ids[chunk:chunk + 500]
             ph = ",".join("?" * len(part))
+            if action in ("exclude", "include"):
+                c.execute(f"UPDATE transactions SET excluded = ? WHERE id IN ({ph})",
+                          (1 if action == "exclude" else 0, *part))
+                continue
             c.execute(f"DELETE FROM splits WHERE transaction_id IN ({ph})", part)
             if clear:
                 c.execute(f"UPDATE transactions SET category_id = NULL, category_locked = 0 WHERE id IN ({ph})", part)
@@ -513,7 +549,8 @@ async def bulk_update(request: Request):
 
 @app.post("/transactions/{tx_id:int}")
 def update_tx(request: Request, tx_id: int, category_id: str = Form(""), payee: str = Form(None),
-              notes: str = Form(None), details_only: str = Form(None)):
+              notes: str = Form(None), details_only: str = Form(None), excluded: str = Form(None),
+              set_excluded: str = Form(None)):
     with conn() as c:
         if details_only:
             pass
@@ -523,30 +560,32 @@ def update_tx(request: Request, tx_id: int, category_id: str = Form(""), payee: 
             c.execute("UPDATE transactions SET payee = ? WHERE id = ?", (payee.strip(), tx_id))
         if notes is not None:
             c.execute("UPDATE transactions SET notes = ? WHERE id = ?", (notes.strip() or None, tx_id))
+        if set_excluded is not None:   # the edit form always sends set_excluded; the checkbox sends excluded
+            c.execute("UPDATE transactions SET excluded = ? WHERE id = ?", (1 if excluded else 0, tx_id))
     return back(request, "/transactions")
 
 
 @app.get("/export.csv")
 def export(account: str | None = None, category: str | None = None, month: str | None = None,
            q: str | None = None, start: str | None = None, end: str | None = None, amt_op: str | None = None,
-           amt: str | None = None, amt2: str | None = None, flow: str | None = None):
+           amt: str | None = None, amt2: str | None = None, flow: str | None = None, excl: str | None = None):
     """One row per line: split transactions export one row per split, marked in the 'split' column."""
     with conn() as c:
         tree = cats.load(c)
-        where, args = _tx_filters(c, account, category, month, q, start, end, amt_op, amt, amt2, flow)
+        where, args = _tx_filters(c, account, category, month, q, start, end, amt_op, amt, amt2, flow, excl)
         rows = c.execute(f"""SELECT t.posted_date, a.name, t.payee, t.payee_raw, t.memo, l.amount_cents,
-                                    l.category_id, COALESCE(t.notes,''), l.is_split, t.amount_cents
+                                    l.category_id, COALESCE(t.notes,''), l.is_split, t.amount_cents, l.excluded
                              FROM transactions t JOIN accounts a ON a.id = t.account_id
                              JOIN tx_lines l ON l.tx_id = t.id{where}
                              ORDER BY t.posted_date, t.id""", args).fetchall()
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["date", "account", "payee", "original_description", "memo", "amount", "category", "notes",
-                "split", "transaction_total"])
+                "split", "transaction_total", "excluded_from_reports"])
     for r in rows:
         cat = tree.by_id[r[6]].path if r[6] in tree.by_id else ""
         w.writerow([r[0], r[1], r[2], r[3], r[4] or "", f"{r[5] / 100:.2f}", cat, r[7], "yes" if r[8] else "",
-                    f"{r[9] / 100:.2f}"])
+                    f"{r[9] / 100:.2f}", "yes" if r[10] else ""])
     return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv",
                              headers={"Content-Disposition": "attachment; filename=pfi-transactions.csv"})
 
@@ -623,6 +662,7 @@ def budgets_page(request: Request, month: str | None = None, kind: str = "expens
     kind = kind if kind in ("expense", "income") else "expense"
     with conn() as c:
         ov = budgets_mod.overview(c, month, kind)
+        excluded = reports.excluded_summary(c, *budgets_mod.month_bounds(month))
     y, m = int(month[:4]), int(month[5:])
     prev_m = reports._month_start(date(y, m, 1), 1).strftime("%Y-%m")
     next_m = reports._month_start(date(y, m, 1), -1).strftime("%Y-%m")
@@ -637,7 +677,7 @@ def budgets_page(request: Request, month: str | None = None, kind: str = "expens
     for r in rows:
         r["bar"] = charts.progress(r["spent"], r["budget"]) if r["budget"] else None
     return render(request, "budgets.html", month=month, kind=kind, show=show, ov=ov, rows=rows, prev_m=prev_m,
-                  next_m=next_m, msg=msg, label=_mlabel(month))
+                  next_m=next_m, msg=msg, label=_mlabel(month), excluded=excluded)
 
 
 @app.post("/budgets")
@@ -706,7 +746,8 @@ def reports_page(request: Request, report: str = "spending", period: str = "6m",
                "end": e, "account": acct, "level": lvl, "view": view, "tree": tree, "cat_list": tree.ordered(),
                "accounts": c.execute("SELECT id, name FROM accounts ORDER BY name").fetchall(),
                "category": _int(category), "within": None, "breadcrumb": [], "payee": payee,
-               "parents": [x for x in tree.ordered() if x.children and x.depth < cats.MAX_DEPTH]}
+               "parents": [x for x in tree.ordered() if x.children and x.depth < cats.MAX_DEPTH],
+               "excluded": reports.excluded_summary(c, s, e, acct)}
 
         if report in ("spending", "income"):
             kind = "expense" if report == "spending" else "income"
@@ -821,7 +862,8 @@ async def _save_rule(request: Request, rule_id: int | None):
         with conn() as c:
             rules_mod.save(c, rule_id, _conds_from_form(form), _int(form.get("category_id")),
                            (form.get("rename_to") or "").strip() or None, _int(form.get("account_id")),
-                           100 if _int(form.get("priority")) is None else _int(form.get("priority")))
+                           100 if _int(form.get("priority")) is None else _int(form.get("priority")),
+                           set_excluded=form.get("set_excluded") == "on")
             reapply = form.get("reapply") or ("uncategorized" if form.get("apply_now") else "")
             n = (rules_mod.apply_all(c, only_uncategorized=(reapply == "uncategorized"),
                                      include_hand_set=(reapply == "force")) if reapply else None)
@@ -897,6 +939,78 @@ def move_category(cat_id: int, parent_id: str = Form(""), kind: str = Form("")):
     return _cat_action(lambda c: cats.move(c, cat_id, _int(parent_id), kind or None), "Moved.")
 
 
+@app.post("/categories/{cat_id:int}/exclude")
+def exclude_category(cat_id: int, excluded: str = Form(None)):
+    with conn() as c:
+        c.execute("UPDATE categories SET excluded = ? WHERE id = ?", (1 if excluded else 0, cat_id))
+    return RedirectResponse(f"/categories?msg={'Excluded from' if excluded else 'Counted in'}+reports+and+budgets"
+                            f"#cat{cat_id}", status_code=303)
+
+
 @app.post("/categories/{cat_id:int}/delete")
 def delete_category(cat_id: int):
     return _cat_action(lambda c: cats.delete(c, cat_id), "Deleted.")
+
+
+# ---------------------------------------------------------------- organisations
+
+def _org_cookie(resp: RedirectResponse, org_id: int) -> RedirectResponse:
+    # Strict same-site, not readable by page scripts; it only says which organisation is open.
+    resp.set_cookie(ORG_COOKIE, str(org_id), max_age=10 * 365 * 24 * 3600, httponly=True, samesite="strict",
+                    path="/")
+    return resp
+
+
+@app.get("/orgs", response_class=HTMLResponse)
+def orgs_page(request: Request, error: str | None = None, msg: str | None = None):
+    rows = [{"org": o, **orgs.summary(o)} for o in orgs.all_orgs()]
+    return render(request, "orgs.html", rows=rows, error=error, msg=msg)
+
+
+@app.post("/orgs")
+def create_org(name: str = Form(...)):
+    from urllib.parse import quote
+    try:
+        org = orgs.create(name)
+    except orgs.OrgError as e:
+        return RedirectResponse(f"/orgs?error={quote(str(e))}", status_code=303)
+    # Open the new organisation straight away, at its Accounts page.
+    return _org_cookie(RedirectResponse("/accounts?msg=" + quote(f"Created “{org['name']}”. Add its accounts here."),
+                                        status_code=303), org["id"])
+
+
+@app.post("/orgs/switch")
+def switch_org(request: Request, org_id: str = Form(...)):
+    org = orgs.get(org_id)
+    if not org:
+        raise HTTPException(404)
+    # Stay on the same kind of page, but drop ids that belong to the old organisation.
+    ref = request.headers.get("referer") or ""
+    m = re.match(r"^https?://[^/]+(/[a-z]*)", ref)
+    page = m.group(1) if m and m.group(1) in ("/", "/transactions", "/budgets", "/reports", "/import", "/rules",
+                                               "/categories", "/accounts", "/orgs") else "/"
+    return _org_cookie(RedirectResponse(page, status_code=303), org["id"])
+
+
+@app.post("/orgs/{org_id:int}/rename")
+def rename_org(org_id: int, name: str = Form(...)):
+    from urllib.parse import quote
+    try:
+        orgs.rename(org_id, name)
+    except orgs.OrgError as e:
+        return RedirectResponse(f"/orgs?error={quote(str(e))}", status_code=303)
+    return RedirectResponse("/orgs?msg=" + quote("Renamed."), status_code=303)
+
+
+@app.post("/orgs/{org_id:int}/delete")
+def delete_org(request: Request, org_id: int, confirm_name: str = Form("")):
+    from urllib.parse import quote
+    try:
+        dest = orgs.delete(org_id, confirm_name)
+    except orgs.OrgError as e:
+        return RedirectResponse(f"/orgs?error={quote(str(e))}", status_code=303)
+    resp = RedirectResponse("/orgs?msg=" + quote(f"Removed. Its database file was moved to data/deleted/{dest.name} "
+                                                  "in case you need it back."), status_code=303)
+    if request.state.org["id"] == org_id:
+        resp = _org_cookie(resp, orgs.all_orgs()[0]["id"])
+    return resp

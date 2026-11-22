@@ -1,6 +1,7 @@
 """SQLite storage. One file, no server. Money is always stored as integer cents."""
 import os
 import sqlite3
+from contextvars import ContextVar
 from pathlib import Path
 
 def _env(name: str) -> str | None:
@@ -147,8 +148,13 @@ DEFAULT_CATEGORIES = [
 ]
 
 
+# The organisation database the current request works on (set per request from the org switcher).
+current_db: ContextVar[Path | None] = ContextVar("current_db", default=None)
+_initialised: set[str] = set()
+
+
 def connect(path: Path | str | None = None) -> sqlite3.Connection:
-    path = Path(path or DB_PATH)
+    path = Path(path or current_db.get() or DB_PATH)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
@@ -157,16 +163,43 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
     return conn
 
 
-# Every report reads "lines": an unsplit transaction is one line, a split one is a line per split.
+# "Lines": an unsplit transaction is one line, a split one is a line per split.
+# A line is excluded from reports & budgets if its transaction is marked excluded, or its category
+# (or any parent of it, up to 3 levels) is marked excluded. report_lines = what reports/budgets count.
 LINES_VIEW = """
+DROP VIEW IF EXISTS report_lines;
 DROP VIEW IF EXISTS tx_lines;
 CREATE VIEW tx_lines AS
-    SELECT t.id AS tx_id, t.account_id, t.posted_date, t.payee, t.amount_cents, t.category_id, 0 AS is_split
-    FROM transactions t WHERE NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)
-    UNION ALL
-    SELECT t.id, t.account_id, t.posted_date, t.payee, s.amount_cents, s.category_id, 1
-    FROM splits s JOIN transactions t ON t.id = s.transaction_id;
+    WITH base AS (
+        SELECT t.id AS tx_id, t.account_id, t.posted_date, t.payee, t.amount_cents, t.category_id,
+               0 AS is_split, t.excluded AS tx_excluded
+        FROM transactions t WHERE NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)
+        UNION ALL
+        SELECT t.id, t.account_id, t.posted_date, t.payee, s.amount_cents, s.category_id, 1, t.excluded
+        FROM splits s JOIN transactions t ON t.id = s.transaction_id)
+    SELECT b.tx_id, b.account_id, b.posted_date, b.payee, b.amount_cents, b.category_id, b.is_split,
+           CASE WHEN b.tx_excluded = 1 OR COALESCE(c1.excluded, 0) = 1 OR COALESCE(c2.excluded, 0) = 1
+                     OR COALESCE(c3.excluded, 0) = 1 THEN 1 ELSE 0 END AS excluded
+    FROM base b
+    LEFT JOIN categories c1 ON c1.id = b.category_id
+    LEFT JOIN categories c2 ON c2.id = c1.parent_id
+    LEFT JOIN categories c3 ON c3.id = c2.parent_id;
+CREATE VIEW report_lines AS SELECT * FROM tx_lines WHERE excluded = 0;
 """
+
+# Columns added after the first release: (table, column, definition).
+ADDED_COLUMNS = [
+    ("transactions", "excluded", "INTEGER NOT NULL DEFAULT 0"),
+    ("categories", "excluded", "INTEGER NOT NULL DEFAULT 0"),
+    ("rules", "set_excluded", "INTEGER NOT NULL DEFAULT 0"),
+]
+
+
+def _add_columns(conn: sqlite3.Connection) -> None:
+    for table, col, ddl in ADDED_COLUMNS:
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if col not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
@@ -195,6 +228,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
 def init(conn: sqlite3.Connection) -> None:
     _migrate(conn)
     conn.executescript(SCHEMA)
+    _add_columns(conn)
     conn.executescript(LINES_VIEW)
     # Rules made before conditions existed: turn their single text test into a condition.
     conn.execute("""INSERT INTO rule_conditions(rule_id, field, op, value)
@@ -206,3 +240,13 @@ def init(conn: sqlite3.Connection) -> None:
             conn.executemany("INSERT INTO categories(name, kind, parent_id) VALUES (?, ?, ?)",
                              [(ch, kind, pid) for ch in children])
     conn.commit()
+
+
+def ensure_initialised(path: Path | str) -> None:
+    """Create/upgrade an organisation database once per process."""
+    key = str(Path(path).resolve())
+    if key in _initialised:
+        return
+    with connect(path) as c:
+        init(c)
+    _initialised.add(key)

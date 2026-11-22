@@ -15,8 +15,10 @@ def client(monkeypatch):
     monkeypatch.setenv("PFI_DATA_DIR", tmp)
     monkeypatch.setenv("PFI_DB", os.path.join(tmp, "t.db"))
     import importlib
-    from app import db, main
+    from app import backup, db, main, orgs
     importlib.reload(db)
+    importlib.reload(orgs)
+    importlib.reload(backup)
     importlib.reload(main)
     from fastapi.testclient import TestClient
     with TestClient(main.app) as c:

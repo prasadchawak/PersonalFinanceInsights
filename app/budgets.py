@@ -26,7 +26,7 @@ def spent_by_category(conn, month: str) -> dict[int | None, int]:
     """Raw spending per category for the month (expenses positive, refunds reduce it). Uses split lines."""
     start, end = month_bounds(month)
     return {r[0]: -r[1] for r in conn.execute(
-        "SELECT category_id, SUM(amount_cents) FROM tx_lines WHERE posted_date BETWEEN ? AND ? GROUP BY category_id",
+        "SELECT category_id, SUM(amount_cents) FROM report_lines WHERE posted_date BETWEEN ? AND ? GROUP BY category_id",
         (start, end))}
 
 
@@ -50,7 +50,7 @@ def overview(conn, month: str, kind: str = "expense") -> dict:
     total_budget = sum(r["budget"] for r in top_budgets)
     total_spent_in_budgeted = sum(r["spent"] for r in top_budgets)
     start, end = month_bounds(month)
-    uncat = conn.execute("SELECT COALESCE(-SUM(amount_cents), 0) FROM tx_lines WHERE category_id IS NULL"
+    uncat = conn.execute("SELECT COALESCE(-SUM(amount_cents), 0) FROM report_lines WHERE category_id IS NULL"
                          " AND amount_cents < 0 AND posted_date BETWEEN ? AND ?", (start, end)).fetchone()[0]
     total_spent = sum(r["spent"] for r in rows if r["cat"].depth == 1)
     for r in rows:

@@ -73,7 +73,7 @@ def category_totals(conn: sqlite3.Connection, start: str, end: str, kind: str = 
     where, args = _where(start, end, account)
     rows = conn.execute(f"""
         SELECT t.category_id AS cid, SUM(t.amount_cents) AS total
-        FROM tx_lines t LEFT JOIN categories c ON c.id = t.category_id
+        FROM report_lines t LEFT JOIN categories c ON c.id = t.category_id
         WHERE {where} AND {_kind_sql()} = ?
         GROUP BY t.category_id""", (*args, kind)).fetchall()
     allowed = set(tree.descendants(within)) if within else None
@@ -102,7 +102,7 @@ def income_vs_expense(conn, start: str, end: str, account: int | None = None) ->
     where, args = _where(start, end, account)
     rows = conn.execute(f"""
         SELECT substr(t.posted_date,1,7) AS m, {_kind_sql()} AS kind, SUM(t.amount_cents) AS total
-        FROM tx_lines t LEFT JOIN categories c ON c.id = t.category_id
+        FROM report_lines t LEFT JOIN categories c ON c.id = t.category_id
         WHERE {where} AND {_kind_sql()} != 'transfer' GROUP BY 1, 2""", args).fetchall()
     by = {m: {"month": m, "income": 0, "expense": 0} for m in months_between(start, end)}
     for r in rows:
@@ -131,7 +131,7 @@ def category_trend(conn, start: str, end: str, category: int | None, account: in
         where += f" AND {_kind_sql()} = 'expense'"
         sign = -1
     rows = dict(conn.execute(f"""SELECT substr(t.posted_date,1,7), SUM(t.amount_cents)
-        FROM tx_lines t LEFT JOIN categories c ON c.id = t.category_id WHERE {where} GROUP BY 1""", args).fetchall())
+        FROM report_lines t LEFT JOIN categories c ON c.id = t.category_id WHERE {where} GROUP BY 1""", args).fetchall())
     return [{"month": m, "value": sign * rows.get(m, 0)} for m in months_between(start, end)]
 
 
@@ -160,7 +160,7 @@ def top_payees(conn, start: str, end: str, account: int | None = None, limit: in
     where, args = _where(start, end, account)
     rows = conn.execute(f"""
         SELECT t.payee AS payee, -SUM(t.amount_cents) AS spent, COUNT(*) AS n
-        FROM tx_lines t LEFT JOIN categories c ON c.id = t.category_id
+        FROM report_lines t LEFT JOIN categories c ON c.id = t.category_id
         WHERE {where} AND {_kind_sql()} = 'expense'
         GROUP BY t.payee HAVING spent > 0 ORDER BY spent DESC LIMIT ?""", (*args, limit)).fetchall()
     return [{"label": r["payee"], "value": r["spent"], "n": r["n"], "id": None} for r in rows]
@@ -177,7 +177,7 @@ def merchants(conn, start: str, end: str, account: int | None = None, category: 
     rows = conn.execute(f"""
         SELECT t.payee AS payee, -SUM(t.amount_cents) AS spent, COUNT(DISTINCT t.tx_id) AS n,
                MIN(t.posted_date) AS first, MAX(t.posted_date) AS last
-        FROM tx_lines t LEFT JOIN categories c ON c.id = t.category_id
+        FROM report_lines t LEFT JOIN categories c ON c.id = t.category_id
         WHERE {where} AND {_kind_sql()} = 'expense'
         GROUP BY t.payee HAVING spent > 0 ORDER BY spent DESC LIMIT ?""", (*args, limit)).fetchall()
     return [{"label": r["payee"], "value": r["spent"], "n": r["n"], "avg": r["spent"] // max(1, r["n"]),
@@ -189,13 +189,23 @@ def merchant_detail(conn, start: str, end: str, payee: str, account: int | None 
     where += " AND t.payee = ?"
     args.append(payee)
     monthly = dict(conn.execute(f"""SELECT substr(t.posted_date,1,7), -SUM(t.amount_cents)
-        FROM tx_lines t WHERE {where} GROUP BY 1""", args).fetchall())
+        FROM report_lines t WHERE {where} GROUP BY 1""", args).fetchall())
     tree = cats.load(conn)
-    by_cat = conn.execute(f"""SELECT t.category_id AS cid, -SUM(t.amount_cents) AS v FROM tx_lines t
+    by_cat = conn.execute(f"""SELECT t.category_id AS cid, -SUM(t.amount_cents) AS v FROM report_lines t
         WHERE {where} GROUP BY 1 ORDER BY v DESC""", args).fetchall()
-    n, total = conn.execute(f"SELECT COUNT(DISTINCT t.tx_id), COALESCE(-SUM(t.amount_cents),0) FROM tx_lines t WHERE {where}",
+    n, total = conn.execute(f"SELECT COUNT(DISTINCT t.tx_id), COALESCE(-SUM(t.amount_cents),0) FROM report_lines t WHERE {where}",
                             args).fetchone()
     return {"trend": [{"month": m, "value": monthly.get(m, 0)} for m in months_between(start, end)],
             "categories": [{"label": tree.by_id[r["cid"]].path if r["cid"] in tree.by_id else "Uncategorised",
                             "value": r["v"], "id": r["cid"]} for r in by_cat if r["v"] > 0],
             "n": n, "total": total, "avg": total // max(1, n)}
+
+
+def excluded_summary(conn, start: str, end: str, account: int | None = None) -> dict:
+    """What was left out of reports/budgets in this period (so totals never silently differ)."""
+    where, args = _where(start, end, account)
+    n, out_c, in_c = conn.execute(f"""
+        SELECT COUNT(DISTINCT t.tx_id), COALESCE(-SUM(CASE WHEN t.amount_cents < 0 THEN t.amount_cents END), 0),
+               COALESCE(SUM(CASE WHEN t.amount_cents > 0 THEN t.amount_cents END), 0)
+        FROM tx_lines t WHERE {where} AND t.excluded = 1""", args).fetchone()
+    return {"n": n, "out": out_c, "in": in_c, "start": start, "end": end, "account": account}

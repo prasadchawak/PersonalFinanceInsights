@@ -32,16 +32,17 @@ def store(conn: sqlite3.Connection, account_id: int, filename: str, file_hash: s
     new = 0
     for t in txns:
         payee = clean_payee(t.payee_raw)
-        category_id = None
+        category_id, excluded = None, 0
         r = rules_mod.first_match(rules, account_id, t.payee_raw, t.memo, t.amount_cents, payee)
         if r:
             category_id = r["category_id"]
             payee = r["rename_to"] or payee
+            excluded = 1 if r.get("set_excluded") else 0
         cur = conn.execute(
             "INSERT OR IGNORE INTO transactions(account_id, posted_date, amount_cents, payee_raw, payee, memo,"
-            " category_id, fingerprint, import_id, raw_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            " category_id, fingerprint, import_id, raw_json, excluded) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (account_id, t.posted_date, t.amount_cents, t.payee_raw, payee, t.memo, category_id,
-             t.fingerprint, import_id, json.dumps(t.raw)))
+             t.fingerprint, import_id, json.dumps(t.raw), excluded))
         new += cur.rowcount
     dup = len(txns) - new
     conn.execute("UPDATE imports SET rows_new = ?, rows_duplicate = ? WHERE id = ?", (new, dup, import_id))
@@ -70,7 +71,7 @@ def month_summary(conn: sqlite3.Connection, month: str) -> dict:
         SELECT c.id AS category_id, COALESCE(c.name, 'Uncategorized') AS category,
                COALESCE(c.kind, CASE WHEN t.amount_cents < 0 THEN 'expense' ELSE 'income' END) AS kind,
                SUM(t.amount_cents) AS total, COUNT(*) AS n
-        FROM tx_lines t LEFT JOIN categories c ON c.id = t.category_id
+        FROM report_lines t LEFT JOIN categories c ON c.id = t.category_id
         WHERE substr(t.posted_date, 1, 7) = ? AND COALESCE(c.kind, '') != 'transfer'
         GROUP BY 1, 2, 3 ORDER BY total""", (month,)).fetchall()
     spending = [r for r in rows if r["kind"] == "expense"]

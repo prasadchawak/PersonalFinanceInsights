@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import legend %}
+{% from "_macros.html" import legend, excluded_note %}
 {% block title %}Overview{% endblock %}
 {% block content %}
 {% if not accounts %}
@@ -25,6 +25,7 @@
   <div class="tile"><span>Net worth (tracked accounts)</span><b>{{ (assets + debts)|money }}</b></div>
 </div>
 
+{{ excluded_note(excluded) }}
 {% if uncategorized %}
 <p class="notice">{{ uncategorized }} transaction{{ 's' if uncategorized != 1 }} need a category.
   <a href="/transactions?category=none">Sort them →</a></p>

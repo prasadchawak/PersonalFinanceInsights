@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import excluded_note %}
 {% block title %}Budgets{% endblock %}
 {% block content %}
 <div class="row between">
@@ -21,6 +22,7 @@
     {% if ov.uncategorised %}<small class="muted">+ {{ ov.uncategorised|money }} <a href="/transactions?category=none&month={{ month }}">uncategorised</a></small>{% endif %}</div>
 </div>
 
+{{ excluded_note(excluded) }}
 <form method="get" class="filters">
   <input type="hidden" name="month" value="{{ month }}">
   <span class="seg">

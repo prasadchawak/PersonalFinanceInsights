@@ -9,3 +9,10 @@
   {% for it in items %}<li><span class="swatch {{ it.cls }}"></span>{{ it.label }}</li>{% endfor %}
 </ul>
 {%- endmacro %}
+
+{% macro excluded_note(x) -%}
+{% if x and x.n %}
+<p class="muted small exclnote">⊘ Not counted here: <a href="/transactions?start={{ x.start }}&end={{ x.end }}{{ '&account=' ~ x.account if x.account }}&excl=only">{{ x.n }} excluded transaction{{ 's' if x.n != 1 }}</a>
+  ({% if x.out %}{{ x.out|money }} out{% endif %}{% if x.out and x['in'] %}, {% endif %}{% if x['in'] %}{{ x['in']|money }} in{% endif %}).</p>
+{% endif %}
+{%- endmacro %}

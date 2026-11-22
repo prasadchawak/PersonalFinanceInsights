@@ -16,6 +16,8 @@ class Cat:
     path: str = ""
     children: list["Cat"] = field(default_factory=list)
     ancestors: list[int] = field(default_factory=list)  # root first, excluding self
+    excluded: bool = False            # marked "leave out of reports & budgets" itself
+    excluded_by: str | None = None    # name of the parent it inherits exclusion from, if any
 
     @property
     def root_id(self) -> int:
@@ -24,7 +26,9 @@ class Cat:
 
 class Tree:
     def __init__(self, rows):
-        self.by_id: dict[int, Cat] = {r["id"]: Cat(r["id"], r["name"], r["kind"], r["parent_id"]) for r in rows}
+        self.by_id: dict[int, Cat] = {r["id"]: Cat(r["id"], r["name"], r["kind"], r["parent_id"],
+                                                   excluded=bool(r["excluded"]) if "excluded" in r.keys() else False)
+                                       for r in rows}
         self.roots: list[Cat] = []
         for c in self.by_id.values():
             parent = self.by_id.get(c.parent_id) if c.parent_id else None
@@ -36,6 +40,7 @@ class Tree:
             c.depth = len(ancestors) + 1
             c.ancestors = [a.id for a in ancestors]
             c.path = SEP.join([a.name for a in ancestors] + [c.name])
+            c.excluded_by = next((a.name for a in ancestors if a.excluded), None)
             c.children.sort(key=lambda x: x.name.lower())
             for ch in c.children:
                 walk(ch, ancestors + [c])
@@ -78,7 +83,7 @@ class Tree:
 
 
 def load(conn: sqlite3.Connection) -> Tree:
-    return Tree(conn.execute("SELECT id, name, kind, parent_id FROM categories").fetchall())
+    return Tree(conn.execute("SELECT id, name, kind, parent_id, excluded FROM categories").fetchall())
 
 
 class CategoryError(ValueError):

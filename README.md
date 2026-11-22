@@ -37,10 +37,18 @@ On macOS or Linux, run `./run.sh` instead.
 12. **Sorting:** click any column header on Transactions (date, payee, account, category or amount) to sort by it, and click again to reverse. Sorting keeps your filters.
     **Amount filters:** on Transactions, filter by amount (equals, more than, at least, less than, at most, between; always positive numbers) and by money out or in. These combine with the other filters, sorting, bulk edit and CSV export. Typing a number such as `24.85` or `$3,200` into the search box also finds transactions of exactly that amount.
 13. **Transfers:** card payments and moves between your own accounts belong in a *transfer* category, so they aren't counted as spending twice.
+14. **Organisations:** keep completely separate sets of accounts, for different people or for groups such as household, rental property or business. Each organisation has its own accounts, transactions, categories, rules and budgets, stored in **its own database file** (`data/finance.db` for the first one, called "Personal"; new ones go in `data/orgs/`). The list of organisations is kept in a separate small file, `data/orgs.db`, which holds only names and file locations. Switch with the menu at the top right. Your browser remembers the last one you opened. Manage organisations with ⚙: create, rename, or remove. Removing one moves its file to `data/deleted/` instead of erasing it.
+15. **Leave out of reports and budgets (⊘ exclude):** some money would otherwise be counted twice. For example, you budget and track $X a month going into a savings fund, and later an expense Q is paid from that fund. Counting both X and Q double-counts the same money, so mark Q as excluded. You can exclude:
+    - a single transaction (**edit** → "Leave out of reports & budgets"),
+    - many at once (tick them, or use "all matching this filter", then **⊘ Exclude from reports** or **Include again**),
+    - a whole category and everything under it (Categories page, **⊘ exclude**; e.g. a "Paid from savings fund" category),
+    - automatically, with a rule ("and ⊘ exclude from reports & budgets").
+
+    Excluded transactions still show on Transactions (marked ⊘ and dimmed), and the filter there can show only excluded or hide them. They're still part of account balances and net worth, because the money really moved. Overview, Reports and Budgets each say how much was left out, with a link to those transactions. The CSV export has an `excluded_from_reports` column.
 
 ## Backups
 
-Double-click **`backup.bat`** (or run `python -m app.backup`). It writes a consistent snapshot to `data\backups\` and is safe to run while the app is open. Copy those files to an external drive or another place you trust.
+Double-click **`backup.bat`** (or run `python -m app.backup`). It writes a consistent snapshot of **every organisation's database plus the organisation list** to a dated folder in `data\backups\`, and is safe to run while the app is open. Copy those files to an external drive or another place you trust.
 
 Recommended: turn on BitLocker (Windows full-disk encryption) so the database is encrypted at rest if the laptop is lost.
 

@@ -37,6 +37,11 @@
       <option value="in" {{ 'selected' if f.flow == 'in' }}>money in</option>
     </select>
   </span>
+  <select name="excl" class="autosubmit" title="Transactions left out of reports and budgets">
+    <option value="">incl. &amp; excluded</option>
+    <option value="hide" {{ 'selected' if f.excl == 'hide' }}>counted in reports only</option>
+    <option value="only" {{ 'selected' if f.excl == 'only' }}>⊘ excluded from reports only</option>
+  </select>
   <button class="btn">Filter</button>
   {% if request.url.query %}<a href="/transactions" class="btn">Clear</a>{% endif %}
 </form>
@@ -44,22 +49,26 @@
 
 {% if updated is not none %}<p class="notice">Updated {{ updated }} transaction{{ 's' if updated != 1 }}.</p>{% endif %}
 
-<p class="muted small">{{ total }} transaction{{ 's' if total != 1 }} · total {{ total_cents|money }}.
+<p class="muted small">{{ total }} transaction{{ 's' if total != 1 }} · total {{ total_cents|money }}{% if excl_n and f.excl != 'only' %}
+  · <a href="?{% for k, v in request.query_params.items() if k not in ('excl','page','updated') %}{{ k }}={{ v|urlencode }}&{% endfor %}excl=only">{{ excl_n }} excluded from reports</a> ({{ excl_cents|money }}){% endif %}.
   Picking a parent category also shows everything under it. Bulk-setting a category on a split transaction replaces the split. A category set by hand is locked (🔒) so rules won't overwrite it.</p>
 
 <!-- Bulk bar. Row checkboxes join this form via form="bulk". -->
 <form method="post" action="/transactions/bulk" id="bulk" class="bulkbar">
   <input type="hidden" name="return_to" value="{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query }}">
-  {% for k in ['account','category','month','q','start','end','amt_op','amt','amt2','flow'] %}<input type="hidden" name="f_{{ k }}" value="{{ f[k] if f[k] is not none }}">{% endfor %}
+  {% for k in ['account','category','month','q','start','end','amt_op','amt','amt2','flow','excl'] %}<input type="hidden" name="f_{{ k }}" value="{{ f[k] if f[k] is not none }}">{% endfor %}
   <span class="bulkcount" data-total="{{ total }}">0 selected</span>
-  <select name="category_id" required>
+  <select name="category_id">
     <option value="">Set category to…</option>
     <option value="none">— uncategorised —</option>
     {{ cat_options(cat_list) }}
   </select>
   <label class="check small"><input type="radio" name="scope" value="selected" checked> ticked rows</label>
   <label class="check small"><input type="radio" name="scope" value="filter"> all {{ total }} matching this filter</label>
-  <button class="btn primary">Apply</button>
+  <button class="btn primary" name="action" value="category">Apply</button>
+  <span class="bulksep"></span>
+  <button class="btn" name="action" value="exclude" title="Leave these out of reports and budgets">⊘ Exclude from reports</button>
+  <button class="btn" name="action" value="include" title="Count these in reports and budgets again">Include again</button>
 </form>
 
 <section class="card flush">
@@ -69,12 +78,14 @@
     {{ sorth('date', 'Date') }}{{ sorth('payee', 'Payee') }}{{ sorth('account', 'Account') }}{{ sorth('category', 'Category') }}{{ sorth('amount', 'Amount', True) }}<th></th></tr></thead>
   {% for t in txns %}
   {% set cat = tree.by_id.get(t.category_id) %}
-  <tr class="{{ 'uncat' if not t.category_id and not split_map.get(t.id) }}">
+  {% set is_excl = t.id in excluded_ids %}
+  <tr class="{{ 'uncat' if not t.category_id and not split_map.get(t.id) and not is_excl }} {{ 'excl' if is_excl }}">
     <td class="cb"><input type="checkbox" name="ids" value="{{ t.id }}" form="bulk" class="rowcb"></td>
     <td class="nowrap">{{ t.posted_date }}</td>
     <td>{{ t.payee }}{% if t.payee != t.payee_raw %}<br><small class="muted">{{ t.payee_raw }}</small>{% endif %}
         {% if t.memo %}<br><small class="muted">{{ t.memo }}</small>{% endif %}
-        {% if t.notes %}<br><small class="note">📝 {{ t.notes }}</small>{% endif %}</td>
+        {% if t.notes %}<br><small class="note">📝 {{ t.notes }}</small>{% endif %}
+        {% if is_excl %}<br><span class="excltag" title="Not counted in reports or budgets{{ '' if t.excluded else ' (its category is excluded)' }}">⊘ excluded{{ '' if t.excluded else ' via category' }}</span>{% endif %}</td>
     <td class="small">{{ t.account_name }}</td>
     <td>
       {% set parts = split_map.get(t.id) %}
@@ -105,6 +116,8 @@
           <input type="hidden" name="details_only" value="1">
           <label>Payee <input name="payee" value="{{ t.payee }}"></label>
           <label>Notes <input name="notes" value="{{ t.notes or '' }}"></label>
+          <input type="hidden" name="set_excluded" value="1">
+          <label class="check"><input type="checkbox" name="excluded" {{ 'checked' if t.excluded }}> Leave out of reports &amp; budgets</label>
           <button class="btn">Save</button>
         </form>
       </details>

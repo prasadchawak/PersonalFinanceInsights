@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import cat_options, legend %}
+{% from "_macros.html" import cat_options, legend, excluded_note %}
 {% block title %}Reports{% endblock %}
 {% block content %}
 <h1>Reports</h1>
@@ -54,6 +54,7 @@
   <button class="btn">Show</button>
 </form>
 <p class="muted small">{{ start }} to {{ end }}. Transfers between your own accounts are never counted as income or spending.</p>
+{% if report != 'networth' %}{{ excluded_note(excluded) }}{% endif %}
 
 {% set base = '?report=' ~ report ~ '&period=custom&start=' ~ start ~ '&end=' ~ end ~ ('&account=' ~ account if account else '') ~ '&view=' ~ view %}
 {% set txbase = '/transactions?start=' ~ start ~ '&end=' ~ end ~ ('&account=' ~ account if account else '') %}

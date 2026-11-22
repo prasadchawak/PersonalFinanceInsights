@@ -22,6 +22,15 @@
     <a href="/categories" class="{{ 'on' if p.startswith('/categories') }}">Categories</a>
     <a href="/accounts" class="{{ 'on' if p.startswith('/accounts') }}">Accounts</a>
   </nav>
+  {% if current_org %}
+  <form method="post" action="/orgs/switch" class="orgswitch" title="Organisation: each has its own accounts and database file">
+    <select name="org_id" class="autosubmit" aria-label="Organisation">
+      {% for o in all_orgs %}<option value="{{ o.id }}" {{ 'selected' if o.id == current_org.id }}>{{ o.name }}</option>{% endfor %}
+    </select>
+    <noscript><button class="btn">Go</button></noscript>
+    <a href="/orgs" class="small" title="Manage organisations">⚙</a>
+  </form>
+  {% endif %}
   <span class="local" title="Bound to 127.0.0.1 — nothing leaves this computer">● local only</span>
 </header>
 <main>

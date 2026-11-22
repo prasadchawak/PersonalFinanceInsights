@@ -22,12 +22,19 @@ document.addEventListener("submit", (e) => {
   const f = e.target;
   if (f.classList.contains("confirm") && !window.confirm(f.dataset.confirm || "Are you sure?")) { e.preventDefault(); return; }
   if (f.id === "bulk") {
+    const action = (e.submitter && e.submitter.value) || "category";
     const scope = f.querySelector("input[name=scope]:checked").value;
     const n = scope === "filter" ? f.querySelector(".bulkcount").dataset.total : document.querySelectorAll(".rowcb:checked").length;
     if (scope === "selected" && n == 0) { e.preventDefault(); alert("Tick at least one transaction first."); return; }
-    const sel = f.querySelector("select[name=category_id]");
-    const label = sel.options[sel.selectedIndex].title || sel.options[sel.selectedIndex].text.trim();
-    if (!window.confirm(`Set category to “${label}” on ${n} transaction(s)?`)) e.preventDefault();
+    let what;
+    if (action === "category") {
+      const sel = f.querySelector("select[name=category_id]");
+      if (!sel.value) { e.preventDefault(); alert("Pick a category first."); return; }
+      what = `Set category to “${sel.options[sel.selectedIndex].title || sel.options[sel.selectedIndex].text.trim()}”`;
+    } else {
+      what = action === "exclude" ? "Leave out of reports and budgets" : "Count in reports and budgets again";
+    }
+    if (!window.confirm(`${what}: ${n} transaction(s)?`)) e.preventDefault();
   }
 });
 

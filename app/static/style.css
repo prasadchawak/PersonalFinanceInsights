@@ -193,3 +193,16 @@ small.shadow { color: var(--warn); cursor: help; white-space: nowrap; }
 p.hint { margin: .1rem 0 .2rem 2.7rem; }
 .money { white-space: nowrap; }
 .amtfilter { display: inline-flex; gap: .35rem; align-items: center; flex-wrap: wrap; }
+
+/* ---------- organisation switcher */
+.orgswitch { display: inline-flex; gap: .3rem; align-items: center; margin: 0; }
+.orgswitch select { font-weight: 600; max-width: 14rem; }
+.orgswitch a { color: var(--muted); }
+tr.current td { background: var(--bg); }
+
+/* ---------- excluded from reports */
+tr.excl td { opacity: .62; }
+tr.excl td:first-child, tr.excl td:last-child { opacity: 1; }
+.excltag { display: inline-block; font-size: .75rem; padding: 0 .45rem; border-radius: 999px; border: 1px dashed var(--muted); color: var(--muted); }
+.bulksep { width: 1px; height: 1.6rem; background: var(--line); margin: 0 .2rem; }
+.cattree tr.excl td.catname a { text-decoration: line-through; text-decoration-color: var(--muted); }
