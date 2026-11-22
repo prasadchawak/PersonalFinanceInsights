@@ -152,7 +152,7 @@ def test_edit_rule_and_reapply(client):
     load_checking(client, acct)
     client.post("/rules", data={"match_type": "contains", "pattern": "starbux", "category_id": cat_id("Dining")})
     rid = re.search(r'action="/rules/(\d+)"', client.get("/rules").text).group(1)
-    assert re.search(r'<td class="num muted">0</td>', client.get("/rules").text)
+    assert re.search(r'<td class="num muted">0\s', client.get("/rules").text)
     r = client.post(f"/rules/{rid}", data={"match_type": "starts_with", "pattern": "STARBUCKS", "category_id": cat_id("Coffee"),
                                            "rename_to": "Starbucks", "priority": "10", "reapply": "uncategorized"})
     assert "Rules updated 2 transactions" in r.text

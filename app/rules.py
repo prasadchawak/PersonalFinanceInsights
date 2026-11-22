@@ -6,7 +6,10 @@ Condition fields
   text       description OR memo (how single-condition rules have always worked)
   payee      the bank's description only
   memo       the memo only
-  amount     the size of the transaction, ignoring sign (e.g. "more than 100")
+  amount     compared with the transaction amount. Positive numbers compare the size of the
+             transaction in either direction ("> 100" = any transaction over $100). If any number
+             in the test is negative, the real signed amount is used instead, as on your statement
+             ("< -100" = money out of more than $100; "between -60 and -10" = purchases of $10–$60).
   direction  money out / money in
 The rule's optional account also has to match.
 """
@@ -61,10 +64,17 @@ def cond_matches(c: dict, payee_raw: str, memo: str | None, amount_cents: int | 
     if f == "amount":
         if amount_cents is None:
             return False
-        a, v, v2 = abs(amount_cents), int(c["value"]), int(c["value2"] or 0)
+        v, v2 = int(c["value"]), int(c["value2"] or 0)
+        signed = v < 0 or v2 < 0
+        a = amount_cents if signed else abs(amount_cents)
         return {"eq": a == v, "gt": a > v, "gte": a >= v, "lt": a < v, "lte": a <= v,
                 "between": min(v, v2) <= a <= max(v, v2)}.get(op, False)
     return False
+
+
+def _m(cents) -> str:
+    cents = int(cents or 0)
+    return f"{'-' if cents < 0 else ''}${abs(cents) / 100:,.2f}"
 
 
 def describe(c: dict) -> str:
@@ -72,10 +82,11 @@ def describe(c: dict) -> str:
     if f == "direction":
         return "money out" if c["value"] == "out" else "money in"
     if f == "amount":
-        v = f"${int(c['value']) / 100:,.2f}"
+        signed = int(c["value"]) < 0 or int(c["value2"] or 0) < 0
+        what = "amount" if signed else "amount (either direction)"
         if op == "between":
-            return f"amount between {v} and ${int(c['value2'] or 0) / 100:,.2f}"
-        return f"amount {AMOUNT_OPS[op]} {v}"
+            return f"{what} between {_m(c['value'])} and {_m(c['value2'])}"
+        return f"{what} {AMOUNT_OPS[op]} {_m(c['value'])}"
     return f"{FIELD_LABELS[f].lower()} {TEXT_OPS.get(op, op)} “{c['value']}”"
 
 
@@ -92,9 +103,7 @@ def load(conn: sqlite3.Connection) -> list[dict]:
 def first_match(rules: list[dict], account_id: int, payee_raw: str, memo: str | None,
                 amount_cents: int | None = None):
     for r in rules:
-        if r["account_id"] and r["account_id"] != account_id:
-            continue
-        if r["conds"] and all(cond_matches(c, payee_raw, memo, amount_cents) for c in r["conds"]):
+        if rule_matches(r, account_id, payee_raw, memo, amount_cents):
             return r
     return None
 
@@ -123,8 +132,9 @@ def validate_conditions(conds: list[dict]) -> list[dict]:
                 raise RuleError("Unknown amount test.")
             if op == "between" and c.get("value2") in (None, ""):
                 raise RuleError("“Between” needs two amounts.")
-            out.append({"field": f, "op": op, "value": str(abs(int(c["value"]))),
-                        "value2": str(abs(int(c["value2"]))) if op == "between" else None})
+            # Keep the sign: negative numbers mean "compare the signed amount" (see cond_matches).
+            out.append({"field": f, "op": op, "value": str(int(c["value"])),
+                        "value2": str(int(c["value2"])) if op == "between" else None})
         elif f == "direction":
             if c.get("value") in ("in", "out"):
                 out.append({"field": f, "op": "is", "value": c["value"], "value2": None})
@@ -152,11 +162,14 @@ def save(conn, rule_id: int | None, conds: list[dict], category_id, rename_to, a
     return rule_id
 
 
-def apply_all(conn: sqlite3.Connection, only_uncategorized: bool = True) -> int:
-    """Re-run rules over existing transactions. Never touches hand-set categories or split transactions."""
+def apply_all(conn: sqlite3.Connection, only_uncategorized: bool = True, include_hand_set: bool = False) -> int:
+    """Re-run rules over existing transactions. Split transactions are never touched. Hand-set (locked)
+    categories are skipped unless include_hand_set — then a matching rule replaces them and unlocks them."""
     rules = load(conn)
-    sql = ("SELECT id, account_id, payee_raw, memo, amount_cents FROM transactions t WHERE category_locked = 0"
-           " AND NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)")
+    sql = ("SELECT id, account_id, payee_raw, memo, amount_cents FROM transactions t WHERE"
+           " NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)")
+    if not include_hand_set:
+        sql += " AND category_locked = 0"
     if only_uncategorized:
         sql += " AND category_id IS NULL"
     changed = 0
@@ -167,6 +180,7 @@ def apply_all(conn: sqlite3.Connection, only_uncategorized: bool = True) -> int:
         sets, args = [], []
         if r["category_id"]:
             sets.append("category_id = ?"); args.append(r["category_id"])
+            sets.append("category_locked = 0")
         if r["rename_to"]:
             sets.append("payee = ?"); args.append(r["rename_to"])
         if sets:
@@ -176,12 +190,26 @@ def apply_all(conn: sqlite3.Connection, only_uncategorized: bool = True) -> int:
     return changed
 
 
-def match_counts(conn: sqlite3.Connection) -> dict[int, int]:
-    """How many transactions each rule would win (first match) — helps spot rules that never fire."""
+def rule_matches(r: dict, account_id: int, payee_raw: str, memo: str | None, amount_cents: int | None) -> bool:
+    if r["account_id"] and r["account_id"] != account_id:
+        return False
+    return bool(r["conds"]) and all(cond_matches(c, payee_raw, memo, amount_cents) for c in r["conds"])
+
+
+def match_counts(conn: sqlite3.Connection) -> dict[int, dict]:
+    """Per rule: 'wins' = transactions it categorises (it's the first match); 'shadowed' = transactions it
+    also matches but an earlier rule (lower priority number, or same priority and created earlier) wins.
+    A rule with wins 0 and shadowed > 0 needs a lower priority number to take effect."""
     rules = load(conn)
-    counts = {r["id"]: 0 for r in rules}
+    out = {r["id"]: {"wins": 0, "shadowed": 0, "blockers": {}} for r in rules}
+    names = {r["id"]: (describe(r["conds"][0]) if r["conds"] else f"rule {r['id']}") for r in rules}
     for tx in conn.execute("SELECT account_id, payee_raw, memo, amount_cents FROM transactions"):
-        r = first_match(rules, tx["account_id"], tx["payee_raw"], tx["memo"], tx["amount_cents"])
-        if r:
-            counts[r["id"]] += 1
-    return counts
+        hits = [r for r in rules if rule_matches(r, tx["account_id"], tx["payee_raw"], tx["memo"], tx["amount_cents"])]
+        if not hits:
+            continue
+        out[hits[0]["id"]]["wins"] += 1
+        for r in hits[1:]:
+            out[r["id"]]["shadowed"] += 1
+            b = out[r["id"]]["blockers"]
+            b[names[hits[0]["id"]]] = b.get(names[hits[0]["id"]], 0) + 1
+    return out

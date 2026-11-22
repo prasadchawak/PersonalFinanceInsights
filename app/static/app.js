@@ -73,3 +73,12 @@ document.addEventListener("change", (e) => {
     if (v2) v2.classList.toggle("hidden", e.target.value !== "between");
   }
 });
+
+// Overriding hand-set categories is the one rules action that discards your own choices: confirm it.
+document.addEventListener("submit", (e) => {
+  const sel = e.target.querySelector && e.target.querySelector("select[name=reapply], select[name=scope]");
+  if (sel && sel.value === "force" &&
+      !window.confirm("Re-apply rules to ALL transactions, replacing categories you set by hand (🔒) wherever a rule matches? Split transactions are not changed.")) {
+    e.preventDefault();
+  }
+}, true);

@@ -24,10 +24,11 @@
         <option value="">any amount</option>
         {% for k, label in amount_ops.items() %}<option value="{{ k }}" {{ 'selected' if ac and ac.op == k }}>amount {{ label }}</option>{% endfor %}
       </select>
-      <input name="amount_v" size="9" inputmode="decimal" placeholder="0.00" value="{{ '%.2f'|format(ac.value|int / 100) if ac }}">
-      <span class="v2 {{ 'hidden' if not (ac and ac.op == 'between') }}">and <input name="amount_v2" size="9" inputmode="decimal" placeholder="0.00"
+      <input name="amount_v" size="9" inputmode="decimal" placeholder="e.g. -100" value="{{ '%.2f'|format(ac.value|int / 100) if ac }}">
+      <span class="v2 {{ 'hidden' if not (ac and ac.op == 'between') }}">and <input name="amount_v2" size="9" inputmode="decimal" placeholder="e.g. -10"
             value="{{ '%.2f'|format(ac.value2|int / 100) if ac and ac.value2 }}"></span>
-      <small class="muted">ignores sign</small>
+      <small class="muted hint">Negative = as on your statement (“&lt; -100” = spent more than $100).
+        Positive = size in either direction (“&gt; 100” = any transaction over $100).</small>
     </div>
     <div class="condrow">
       <span class="and">and</span>
@@ -52,14 +53,17 @@
       <select name="reapply">
         <option value="" {{ 'selected' if r }}>don't change existing transactions</option>
         <option value="uncategorized" {{ 'selected' if not r }}>apply rules to uncategorised</option>
-        <option value="all">re-apply rules to all (except hand-set)</option></select></label>
+        <option value="all">re-apply rules to all (except hand-set 🔒)</option>
+        <option value="force">re-apply rules to all, including hand-set 🔒</option></select></label>
     <button class="btn primary">{{ 'Save rule' if r else 'Add rule' }}</button>
   </div>
 {% endmacro %}
 
 {% block content %}
 <h1>Categorisation rules</h1>
-<p class="muted">Rules run on every import. The first match wins (lowest priority number first). They never overwrite a category you set by hand or a split.</p>
+<p class="muted">Rules run on every import. The first match wins: lowest priority number first, then the oldest rule.
+  They never overwrite a category you set by hand or a split, and saving a rule only changes transactions that are uncategorised unless you pick “re-apply to all”.
+  If a rule shows “taken by earlier rule”, give it a lower priority number (e.g. 10) so it runs first.</p>
 {% if applied is not none %}<p class="notice">Rules updated {{ applied }} transaction{{ 's' if applied != 1 }}.</p>{% endif %}
 {% if saved %}<p class="notice">Rule saved.</p>{% endif %}
 {% if error %}<p class="error notice-err">{{ error }}</p>{% endif %}
@@ -67,7 +71,7 @@
 <details class="card newrule" {{ 'open' if prefill.pattern or not rules or (error and not edit) }}>
   <summary><h2>New rule</h2></summary>
   <form method="post" action="/rules">{{ rule_form() }}</form>
-  <p class="muted small">Example: description contains “AMAZON” <b>and</b> amount more than 200 <b>and</b> money out → Electronics.
+  <p class="muted small">Example: description contains “AMAZON” <b>and</b> amount &lt; -200 → Electronics (Amazon purchases over $200).
     Put specific rules at a lower priority number than general ones (e.g. 10 vs 100) so they win. For “either A or B”, make two rules.</p>
 </details>
 
@@ -75,7 +79,8 @@
 <section class="card">
   <div class="row between"><h2>Your rules</h2>
     <form method="post" action="/rules/apply" class="inline">
-      <select name="scope"><option value="uncategorized">uncategorised only</option><option value="all">all (except hand-set)</option></select>
+      <select name="scope"><option value="uncategorized">uncategorised only</option><option value="all">all (except hand-set 🔒)</option>
+        <option value="force">all, including hand-set 🔒</option></select>
       <button class="btn">Re-run rules</button></form></div>
   <table class="rules">
     <thead><tr><th>#</th><th>When</th><th>Then</th><th class="num" title="Transactions this rule currently wins">Matches</th><th></th></tr></thead>
@@ -84,7 +89,10 @@
         <td>{% for s in r.summary %}{% if not loop.first %} <b class="and">AND</b> {% endif %}<span class="cond">{{ s }}</span>{% endfor %}
             {% if r.account_name %} <b class="and">AND</b> <span class="cond">account is {{ r.account_name }}</span>{% endif %}</td>
         <td>{% if r.category_id in tree.by_id %}→ {{ tree.by_id[r.category_id].path }}{% endif %}{% if r.rename_to %}<br><small class="muted">rename “{{ r.rename_to }}”</small>{% endif %}</td>
-        <td class="num {{ 'muted' if not matches.get(r.id) }}">{{ matches.get(r.id, 0) }}</td>
+        {% set m = matches.get(r.id, {'wins': 0, 'shadowed': 0, 'blockers': {}}) %}
+        <td class="num {{ 'muted' if not m.wins }}">{{ m.wins }}
+          {% if m.shadowed %}<br><small class="shadow" title="Also matches these, but an earlier rule wins: {% for k, v in m.blockers.items() %}{{ k }} ({{ v }}){{ '; ' if not loop.last }}{% endfor %}">
+            +{{ m.shadowed }} taken by earlier rule{{ 's' if m.blockers|length > 1 }}</small>{% endif %}</td>
         <td class="nowrap">
           <details class="ruleedit" {{ 'open' if edit == r.id }}><summary class="btn">Edit</summary>
             <form method="post" action="/rules/{{ r.id }}">{{ rule_form(r) }}</form>

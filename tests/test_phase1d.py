@@ -98,7 +98,7 @@ def test_and_conditions(client):
         assert rules.first_match(rs, acct, "STARBUCKS 1", None, 500) is None            # money in fails
         assert rules.first_match(rs, acct, "STARBUCKS REFUND", None, -500) is None      # not-contains fails
     page = client.get("/rules").text
-    assert "AND" in page and "amount &lt; $6.00" in page and "money out" in page
+    assert "AND" in page and "amount (either direction) &lt; $6.00" in page and "money out" in page
     # between, memo field, and validation
     with db.connect() as c:
         rid = rules.save(c, None, [{"field": "memo", "op": "contains", "value": "fuel"},
@@ -125,7 +125,7 @@ def test_edit_keeps_and_replaces_conditions(client):
                                        "amount_v": "10", "category_id": cat_id("Coffee")})
     assert count("SELECT COUNT(*) FROM rule_conditions WHERE rule_id=?", rid) == 2
     page = client.get("/rules").text
-    assert "description equals “C”" in page and "amount ≥ $10.00" in page
+    assert "description equals “C”" in page and "amount (either direction) ≥ $10.00" in page
 
 
 def test_old_rules_get_a_condition(tmp_path):
@@ -140,3 +140,83 @@ def test_old_rules_get_a_condition(tmp_path):
         db.init(c)
         rows = c.execute("SELECT field, op, value FROM rule_conditions").fetchall()
         assert [tuple(r) for r in rows] == [("text", "starts_with", "AMZN")]
+
+
+# ---------- signed amounts (regression: "< -50" used to behave like "< 50") and shadowed rules
+
+def test_negative_amounts_compare_signed():
+    from app import rules
+    txs = {"BIG": -12000, "SMALL": -2000, "REFUND": 6000, "EXACT": -4210}
+
+    def hits(op, v, v2=None):
+        [c] = rules.validate_conditions([{"field": "amount", "op": op, "value": v, "value2": v2}])
+        return sorted(n for n, a in txs.items() if rules.cond_matches(c, n, None, a))
+
+    assert hits("lt", -5000) == ["BIG"]                         # spent more than $50
+    assert hits("gt", -5000) == ["EXACT", "REFUND", "SMALL"]
+    assert hits("lte", -12000) == ["BIG"]
+    assert hits("between", -1000, -6000) == ["EXACT", "SMALL"]  # order of bounds doesn't matter
+    assert hits("between", -3000, 7000) == ["REFUND", "SMALL"]   # -42.10 is below -30
+    assert hits("eq", -4210) == ["EXACT"]
+    # positive numbers still mean "size, either direction"
+    assert hits("gt", 5000) == ["BIG", "REFUND"]
+    assert hits("lt", 5000) == ["EXACT", "SMALL"]
+    assert hits("eq", 4210) == ["EXACT"]
+
+
+def test_negative_amount_rule_end_to_end(client):
+    acct = make_account(client, "Neg")
+    load_checking(client, acct)   # costco -142.18, starbucks -5.75 x2, payroll +3200, utilities -88.40
+    r = client.post("/rules", data={"amount_op": "lt", "amount_v": "-100", "category_id": cat_id("Shopping"),
+                                    "reapply": "uncategorized"})
+    assert "Rules updated 1 transaction." in r.text          # only Costco
+    assert "amount &lt; -$100.00" in client.get("/rules").text
+    rid = re.search(r'action="/rules/(\d+)"', client.get("/rules").text).group(1)
+    # editing keeps the minus sign in the form
+    assert 'name="amount_v" size="9" inputmode="decimal" placeholder="e.g. -100" value="-100.00"' in client.get("/rules").text
+    client.post(f"/rules/{rid}", data={"amount_op": "between", "amount_v": "-100", "amount_v2": "-50",
+                                       "category_id": cat_id("Utilities"), "reapply": "uncategorized"})
+    assert "1 transaction " in client.get(f"/transactions?category={cat_id('Utilities')}").text
+
+
+def test_shadowed_rule_is_flagged(client):
+    acct = make_account(client, "Sh")
+    load_checking(client, acct)
+    client.post("/rules", data={"t_field": "text", "t_op": "contains", "t_value": "STARBUCKS", "category_id": cat_id("Dining")})
+    client.post("/rules", data={"t_field": "text", "t_op": "contains", "t_value": "STARBUCKS", "amount_op": "lt",
+                                "amount_v": "-5", "category_id": cat_id("Coffee")})
+    from app import db, rules
+    with db.connect() as c:
+        m = rules.match_counts(c)
+    general, specific = sorted(m)
+    assert m[general]["wins"] == 2 and m[specific] ["wins"] == 0 and m[specific]["shadowed"] == 2
+    assert "+2 taken by earlier rule" in client.get("/rules").text
+    # giving the specific rule a lower priority number fixes it
+    client.post(f"/rules/{specific}", data={"t_field": "text", "t_op": "contains", "t_value": "STARBUCKS",
+                                            "amount_op": "lt", "amount_v": "-5", "category_id": cat_id("Coffee"),
+                                            "priority": "10", "reapply": "all"})
+    with db.connect() as c:
+        m = rules.match_counts(c)
+    assert m[specific]["wins"] == 2 and m[general]["wins"] == 0
+
+
+def test_force_reapply_overrides_hand_set_only_when_asked(client):
+    acct = make_account(client, "Lk")
+    load_checking(client, acct)
+    ids = tx_ids(client, "STARBUCKS")
+    client.post("/transactions/bulk", data={"ids": ids, "category_id": cat_id("Dining"), "scope": "selected"})  # locks
+    client.post("/rules", data={"t_field": "text", "t_op": "contains", "t_value": "STARBUCKS",
+                                "category_id": cat_id("Coffee"), "reapply": "all"})
+    assert "2 transactions " in client.get(f"/transactions?category={cat_id('Dining')}").text   # untouched
+    r = client.post("/rules/apply", data={"scope": "force"})
+    assert "Rules updated 2 transactions" in r.text
+    assert "2 transactions " in client.get(f"/transactions?category={cat_id('Coffee')}").text
+    assert count("SELECT COUNT(*) FROM transactions WHERE payee_raw LIKE 'STARBUCKS%' AND category_locked = 1") == 0
+
+
+def test_rerun_rules_button_routes_correctly(client):
+    """Regression: /rules/apply was captured by the /rules/{id} edit route (422)."""
+    make_account(client, "Rt")
+    for scope in ("uncategorized", "all", "force"):
+        r = client.post("/rules/apply", data={"scope": scope})
+        assert r.status_code == 200 and "Rules updated" in r.text, scope

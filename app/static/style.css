@@ -189,3 +189,5 @@ th a.sort.on { color: var(--ink); }
 .dangerzone > summary h2 { display: inline; }
 .delrow { margin: .5rem 0; }
 .delname { min-width: 15rem; }
+small.shadow { color: var(--warn); cursor: help; white-space: nowrap; }
+.condrow .hint { max-width: 30rem; line-height: 1.3; }

@@ -177,7 +177,7 @@ def create_account(name: str = Form(...), institution: str = Form(""), type: str
     return RedirectResponse("/accounts", status_code=303)
 
 
-@app.post("/accounts/{account_id}")
+@app.post("/accounts/{account_id:int}")
 def edit_account(account_id: int, name: str = Form(...), institution: str = Form(""), type: str = Form(...),
                  opening_balance: str = Form("0")):
     from urllib.parse import quote
@@ -197,7 +197,7 @@ def edit_account(account_id: int, name: str = Form(...), institution: str = Form
     return RedirectResponse("/accounts?msg=" + quote("Saved."), status_code=303)
 
 
-@app.post("/accounts/{account_id}/delete")
+@app.post("/accounts/{account_id:int}/delete")
 def delete_account(account_id: int, confirm_name: str = Form("")):
     """Permanently delete an account with all its transactions, splits, import history and
     account-specific rules. Requires typing the account's name."""
@@ -218,7 +218,7 @@ def delete_account(account_id: int, confirm_name: str = Form("")):
                             status_code=303)
 
 
-@app.post("/accounts/{account_id}/opening")
+@app.post("/accounts/{account_id:int}/opening")
 def set_opening(account_id: int, opening_balance: str = Form(...)):
     from .normalize import parse_amount_cents
     with conn() as c:
@@ -352,14 +352,14 @@ async def map_submit(request: Request, token: str):
     return render(request, "import_result.html", result=res, filename=meta["filename"])
 
 
-@app.post("/imports/{import_id}/undo")
+@app.post("/imports/{import_id:int}/undo")
 def undo(import_id: int):
     with conn() as c:
         services.undo_import(c, import_id)
     return RedirectResponse("/import", status_code=303)
 
 
-@app.post("/profiles/{profile_id}/delete")
+@app.post("/profiles/{profile_id:int}/delete")
 def delete_profile(profile_id: int):
     with conn() as c:
         c.execute("DELETE FROM import_profiles WHERE id = ?", (profile_id,))
@@ -468,7 +468,7 @@ async def bulk_update(request: Request):
     return RedirectResponse(f"{target}{sep}updated={len(ids)}", status_code=303)
 
 
-@app.post("/transactions/{tx_id}")
+@app.post("/transactions/{tx_id:int}")
 def update_tx(request: Request, tx_id: int, category_id: str = Form(""), payee: str = Form(None),
               notes: str = Form(None), details_only: str = Form(None)):
     with conn() as c:
@@ -509,7 +509,7 @@ def export(account: str | None = None, category: str | None = None, month: str |
 
 # ---------------------------------------------------------------- splits
 
-@app.get("/transactions/{tx_id}/split", response_class=HTMLResponse)
+@app.get("/transactions/{tx_id:int}/split", response_class=HTMLResponse)
 def split_page(request: Request, tx_id: int, rows: str | None = None, error: str | None = None):
     with conn() as c:
         tx = c.execute("SELECT t.*, a.name AS account_name FROM transactions t JOIN accounts a ON a.id = t.account_id"
@@ -528,7 +528,7 @@ def split_page(request: Request, tx_id: int, rows: str | None = None, error: str
                   is_split=bool(existing), back_to=request.query_params.get("back", "/transactions"))
 
 
-@app.post("/transactions/{tx_id}/split", response_class=HTMLResponse)
+@app.post("/transactions/{tx_id:int}/split", response_class=HTMLResponse)
 async def split_save(request: Request, tx_id: int):
     from .normalize import parse_amount_cents
     form = await request.form()
@@ -561,7 +561,7 @@ async def split_save(request: Request, tx_id: int):
     return RedirectResponse(back_to, status_code=303)
 
 
-@app.post("/transactions/{tx_id}/unsplit")
+@app.post("/transactions/{tx_id:int}/unsplit")
 def unsplit(request: Request, tx_id: int):
     with conn() as c:
         first = c.execute("SELECT category_id FROM splits WHERE transaction_id = ? ORDER BY amount_cents LIMIT 1",
@@ -778,7 +778,8 @@ async def _save_rule(request: Request, rule_id: int | None):
                            (form.get("rename_to") or "").strip() or None, _int(form.get("account_id")),
                            _int(form.get("priority")) or 100)
             reapply = form.get("reapply") or ("uncategorized" if form.get("apply_now") else "")
-            n = rules_mod.apply_all(c, only_uncategorized=(reapply != "all")) if reapply else None
+            n = (rules_mod.apply_all(c, only_uncategorized=(reapply == "uncategorized"),
+                                     include_hand_set=(reapply == "force")) if reapply else None)
     except rules_mod.RuleError as e:
         back_to = f"/rules?error={quote(str(e))}" + (f"&edit={rule_id}" if rule_id else "")
         return RedirectResponse(back_to, status_code=303)
@@ -790,12 +791,12 @@ async def create_rule(request: Request):
     return await _save_rule(request, None)
 
 
-@app.post("/rules/{rule_id}")
+@app.post("/rules/{rule_id:int}")
 async def update_rule(request: Request, rule_id: int):
     return await _save_rule(request, rule_id)
 
 
-@app.post("/rules/{rule_id}/delete")
+@app.post("/rules/{rule_id:int}/delete")
 def delete_rule(rule_id: int):
     with conn() as c:
         c.execute("DELETE FROM rules WHERE id = ?", (rule_id,))
@@ -805,7 +806,7 @@ def delete_rule(rule_id: int):
 @app.post("/rules/apply")
 def apply_rules(scope: str = Form("uncategorized")):
     with conn() as c:
-        n = rules_mod.apply_all(c, only_uncategorized=(scope != "all"))
+        n = rules_mod.apply_all(c, only_uncategorized=(scope == "uncategorized"), include_hand_set=(scope == "force"))
     return RedirectResponse(f"/rules?applied={n}", status_code=303)
 
 
@@ -841,16 +842,16 @@ def create_category(name: str = Form(...), kind: str = Form("expense"), parent_i
     return _cat_action(lambda c: cats.create(c, name, kind, _int(parent_id)), f"Added “{name.strip()}”.")
 
 
-@app.post("/categories/{cat_id}/rename")
+@app.post("/categories/{cat_id:int}/rename")
 def rename_category(cat_id: int, name: str = Form(...)):
     return _cat_action(lambda c: cats.rename(c, cat_id, name), f"Renamed to “{name.strip()}”.")
 
 
-@app.post("/categories/{cat_id}/move")
+@app.post("/categories/{cat_id:int}/move")
 def move_category(cat_id: int, parent_id: str = Form(""), kind: str = Form("")):
     return _cat_action(lambda c: cats.move(c, cat_id, _int(parent_id), kind or None), "Moved.")
 
 
-@app.post("/categories/{cat_id}/delete")
+@app.post("/categories/{cat_id:int}/delete")
 def delete_category(cat_id: int):
     return _cat_action(lambda c: cats.delete(c, cat_id), "Deleted.")
