@@ -23,7 +23,20 @@
   {% if f.start %}<input type="hidden" name="start" value="{{ f.start }}">{% endif %}
   {% if f.end %}<input type="hidden" name="end" value="{{ f.end }}">{% endif %}
   <input type="hidden" name="sort" value="{{ f.sort }}"><input type="hidden" name="dir" value="{{ f.dir }}">
-  <input type="search" name="q" value="{{ f.q }}" placeholder="Search payee, memo, notes">
+  <input type="search" name="q" value="{{ f.q }}" placeholder="Search payee, memo, notes or an amount">
+  <span class="amtfilter">
+    <select name="amt_op" class="amountop" title="Filter by amount">
+      <option value="">any amount</option>
+      {% for k, label in amount_ops.items() %}<option value="{{ k }}" {{ 'selected' if f.amt_op == k }}>amount {{ label }}</option>{% endfor %}
+    </select>
+    <span class="money">$<input name="amt" value="{{ f.amt }}" size="7" inputmode="decimal" placeholder="0.00"></span>
+    <span class="v2 {{ 'hidden' if f.amt_op != 'between' }}">and $<input name="amt2" value="{{ f.amt2 }}" size="7" inputmode="decimal" placeholder="0.00"></span>
+    <select name="flow" class="autosubmit" title="Money in or out">
+      <option value="">in &amp; out</option>
+      <option value="out" {{ 'selected' if f.flow == 'out' }}>money out</option>
+      <option value="in" {{ 'selected' if f.flow == 'in' }}>money in</option>
+    </select>
+  </span>
   <button class="btn">Filter</button>
   {% if request.url.query %}<a href="/transactions" class="btn">Clear</a>{% endif %}
 </form>
@@ -37,7 +50,7 @@
 <!-- Bulk bar. Row checkboxes join this form via form="bulk". -->
 <form method="post" action="/transactions/bulk" id="bulk" class="bulkbar">
   <input type="hidden" name="return_to" value="{{ request.url.path }}{{ '?' ~ request.url.query if request.url.query }}">
-  {% for k in ['account','category','month','q','start','end'] %}<input type="hidden" name="f_{{ k }}" value="{{ f[k] if f[k] is not none }}">{% endfor %}
+  {% for k in ['account','category','month','q','start','end','amt_op','amt','amt2','flow'] %}<input type="hidden" name="f_{{ k }}" value="{{ f[k] if f[k] is not none }}">{% endfor %}
   <span class="bulkcount" data-total="{{ total }}">0 selected</span>
   <select name="category_id" required>
     <option value="">Set category to…</option>

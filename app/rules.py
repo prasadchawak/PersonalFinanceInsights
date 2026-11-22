@@ -3,13 +3,12 @@
 A rule has one or more conditions and ALL of them must match (AND). For "either A or B", make two rules.
 
 Condition fields
-  text       description OR memo (how single-condition rules have always worked)
-  payee      the bank's description only
+  text       description OR memo; "description" means the bank's original text or the name shown in the app
+  payee      description only (original or shown name)
   memo       the memo only
-  amount     compared with the transaction amount. Positive numbers compare the size of the
-             transaction in either direction ("> 100" = any transaction over $100). If any number
-             in the test is negative, the real signed amount is used instead, as on your statement
-             ("< -100" = money out of more than $100; "between -60 and -10" = purchases of $10–$60).
+  amount     the size of the transaction as a positive number, e.g. "= 24.85" or "more than 100".
+             Whether it's money out or in is a separate choice (direction). If a negative number is
+             typed anyway, it is read as "money out" and its size is used.
   direction  money out / money in
 The rule's optional account also has to match.
 """
@@ -19,13 +18,22 @@ import sqlite3
 TEXT_FIELDS = ("text", "payee", "memo")
 TEXT_OPS = {"contains": "contains", "not_contains": "doesn't contain", "starts_with": "starts with",
             "equals": "equals", "regex": "matches regex"}
-AMOUNT_OPS = {"eq": "=", "gt": ">", "gte": "≥", "lt": "<", "lte": "≤", "between": "between"}
+AMOUNT_OPS = {"eq": "equals", "gt": "more than", "gte": "at least", "lt": "less than", "lte": "at most",
+              "between": "between"}
 FIELD_LABELS = {"text": "Description or memo", "payee": "Description", "memo": "Memo",
                 "amount": "Amount", "direction": "Direction"}
 
 
 class RuleError(ValueError):
     pass
+
+
+def _any_text(op: str, pattern: str, texts: list[str | None]) -> bool:
+    """Positive tests pass if any of the texts matches; "doesn't contain" needs all of them to lack it."""
+    texts = [t for t in texts if t]
+    if op == "not_contains":
+        return all(_text_match(op, pattern, t) for t in texts)
+    return any(_text_match(op, pattern, t) for t in texts)
 
 
 def _text_match(op: str, pattern: str, text: str | None) -> bool:
@@ -46,15 +54,13 @@ def _text_match(op: str, pattern: str, text: str | None) -> bool:
     return False
 
 
-def cond_matches(c: dict, payee_raw: str, memo: str | None, amount_cents: int | None) -> bool:
+def cond_matches(c: dict, payee_raw: str, memo: str | None, amount_cents: int | None,
+                 payee: str | None = None) -> bool:
     f, op = c["field"], c["op"]
     if f == "text":
-        # Positive tests pass if either description or memo matches; "doesn't contain" needs both to lack it.
-        if op == "not_contains":
-            return _text_match(op, c["value"], payee_raw) and _text_match(op, c["value"], memo)
-        return _text_match(op, c["value"], payee_raw) or bool(memo and _text_match(op, c["value"], memo))
+        return _any_text(op, c["value"], [payee_raw, payee, memo])
     if f == "payee":
-        return _text_match(op, c["value"], payee_raw)
+        return _any_text(op, c["value"], [payee_raw, payee])
     if f == "memo":
         return _text_match(op, c["value"], memo)
     if f == "direction":
@@ -65,8 +71,11 @@ def cond_matches(c: dict, payee_raw: str, memo: str | None, amount_cents: int | 
         if amount_cents is None:
             return False
         v, v2 = int(c["value"]), int(c["value2"] or 0)
-        signed = v < 0 or v2 < 0
-        a = amount_cents if signed else abs(amount_cents)
+        if v < 0 or v2 < 0:          # a minus sign means "money out" (also covers rules saved by v0.4)
+            if amount_cents >= 0:
+                return False
+            v, v2 = abs(v), abs(v2)
+        a = abs(amount_cents)
         return {"eq": a == v, "gt": a > v, "gte": a >= v, "lt": a < v, "lte": a <= v,
                 "between": min(v, v2) <= a <= max(v, v2)}.get(op, False)
     return False
@@ -82,11 +91,11 @@ def describe(c: dict) -> str:
     if f == "direction":
         return "money out" if c["value"] == "out" else "money in"
     if f == "amount":
-        signed = int(c["value"]) < 0 or int(c["value2"] or 0) < 0
-        what = "amount" if signed else "amount (either direction)"
+        out = " (money out)" if int(c["value"]) < 0 or int(c["value2"] or 0) < 0 else ""
+        v, v2 = abs(int(c["value"])), abs(int(c["value2"] or 0))
         if op == "between":
-            return f"{what} between {_m(c['value'])} and {_m(c['value2'])}"
-        return f"{what} {AMOUNT_OPS[op]} {_m(c['value'])}"
+            return f"amount between {_m(min(v, v2))} and {_m(max(v, v2))}{out}"
+        return f"amount {AMOUNT_OPS[op]} {_m(v)}{out}"
     return f"{FIELD_LABELS[f].lower()} {TEXT_OPS.get(op, op)} “{c['value']}”"
 
 
@@ -101,9 +110,9 @@ def load(conn: sqlite3.Connection) -> list[dict]:
 
 
 def first_match(rules: list[dict], account_id: int, payee_raw: str, memo: str | None,
-                amount_cents: int | None = None):
+                amount_cents: int | None = None, payee: str | None = None):
     for r in rules:
-        if rule_matches(r, account_id, payee_raw, memo, amount_cents):
+        if rule_matches(r, account_id, payee_raw, memo, amount_cents, payee):
             return r
     return None
 
@@ -128,16 +137,23 @@ def validate_conditions(conds: list[dict]) -> list[dict]:
         elif f == "amount":
             if c.get("value") in (None, ""):
                 continue
+            op = op or "eq"   # typed an amount but left the test on "any amount": treat as "equals"
             if op not in AMOUNT_OPS:
                 raise RuleError("Unknown amount test.")
             if op == "between" and c.get("value2") in (None, ""):
                 raise RuleError("“Between” needs two amounts.")
-            # Keep the sign: negative numbers mean "compare the signed amount" (see cond_matches).
-            out.append({"field": f, "op": op, "value": str(int(c["value"])),
-                        "value2": str(int(c["value2"])) if op == "between" else None})
+            v, v2 = int(c["value"]), (int(c["value2"]) if op == "between" else None)
+            if v < 0 or (v2 or 0) < 0:   # minus sign typed: store as size + "money out"
+                out.append({"field": "direction", "op": "is", "value": "out", "value2": None})
+            out.append({"field": f, "op": op, "value": str(abs(v)),
+                        "value2": str(abs(v2)) if v2 is not None else None})
         elif f == "direction":
             if c.get("value") in ("in", "out"):
                 out.append({"field": f, "op": "is", "value": c["value"], "value2": None})
+    dirs = [c for c in out if c["field"] == "direction"]
+    if len({d["value"] for d in dirs}) > 1:
+        raise RuleError("A negative amount means money out, but the rule says money in. Use a positive amount for money in.")
+    out = [c for c in out if c["field"] != "direction"] + dirs[:1]
     if not any(c["field"] in TEXT_FIELDS for c in out) and not any(c["field"] == "amount" for c in out):
         raise RuleError("A rule needs at least one text or amount condition.")
     return out
@@ -166,7 +182,7 @@ def apply_all(conn: sqlite3.Connection, only_uncategorized: bool = True, include
     """Re-run rules over existing transactions. Split transactions are never touched. Hand-set (locked)
     categories are skipped unless include_hand_set — then a matching rule replaces them and unlocks them."""
     rules = load(conn)
-    sql = ("SELECT id, account_id, payee_raw, memo, amount_cents FROM transactions t WHERE"
+    sql = ("SELECT id, account_id, payee_raw, payee, memo, amount_cents FROM transactions t WHERE"
            " NOT EXISTS (SELECT 1 FROM splits s WHERE s.transaction_id = t.id)")
     if not include_hand_set:
         sql += " AND category_locked = 0"
@@ -174,7 +190,7 @@ def apply_all(conn: sqlite3.Connection, only_uncategorized: bool = True, include
         sql += " AND category_id IS NULL"
     changed = 0
     for tx in conn.execute(sql).fetchall():
-        r = first_match(rules, tx["account_id"], tx["payee_raw"], tx["memo"], tx["amount_cents"])
+        r = first_match(rules, tx["account_id"], tx["payee_raw"], tx["memo"], tx["amount_cents"], tx["payee"])
         if not r:
             continue
         sets, args = [], []
@@ -190,10 +206,11 @@ def apply_all(conn: sqlite3.Connection, only_uncategorized: bool = True, include
     return changed
 
 
-def rule_matches(r: dict, account_id: int, payee_raw: str, memo: str | None, amount_cents: int | None) -> bool:
+def rule_matches(r: dict, account_id: int, payee_raw: str, memo: str | None, amount_cents: int | None,
+                 payee: str | None = None) -> bool:
     if r["account_id"] and r["account_id"] != account_id:
         return False
-    return bool(r["conds"]) and all(cond_matches(c, payee_raw, memo, amount_cents) for c in r["conds"])
+    return bool(r["conds"]) and all(cond_matches(c, payee_raw, memo, amount_cents, payee) for c in r["conds"])
 
 
 def match_counts(conn: sqlite3.Connection) -> dict[int, dict]:
@@ -203,8 +220,9 @@ def match_counts(conn: sqlite3.Connection) -> dict[int, dict]:
     rules = load(conn)
     out = {r["id"]: {"wins": 0, "shadowed": 0, "blockers": {}} for r in rules}
     names = {r["id"]: (describe(r["conds"][0]) if r["conds"] else f"rule {r['id']}") for r in rules}
-    for tx in conn.execute("SELECT account_id, payee_raw, memo, amount_cents FROM transactions"):
-        hits = [r for r in rules if rule_matches(r, tx["account_id"], tx["payee_raw"], tx["memo"], tx["amount_cents"])]
+    for tx in conn.execute("SELECT account_id, payee_raw, payee, memo, amount_cents FROM transactions"):
+        hits = [r for r in rules if rule_matches(r, tx["account_id"], tx["payee_raw"], tx["memo"], tx["amount_cents"],
+                                                 tx["payee"])]
         if not hits:
             continue
         out[hits[0]["id"]]["wins"] += 1

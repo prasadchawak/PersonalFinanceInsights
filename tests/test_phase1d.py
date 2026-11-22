@@ -98,7 +98,7 @@ def test_and_conditions(client):
         assert rules.first_match(rs, acct, "STARBUCKS 1", None, 500) is None            # money in fails
         assert rules.first_match(rs, acct, "STARBUCKS REFUND", None, -500) is None      # not-contains fails
     page = client.get("/rules").text
-    assert "AND" in page and "amount (either direction) &lt; $6.00" in page and "money out" in page
+    assert "AND" in page and "amount less than $6.00" in page and "money out" in page
     # between, memo field, and validation
     with db.connect() as c:
         rid = rules.save(c, None, [{"field": "memo", "op": "contains", "value": "fuel"},
@@ -125,7 +125,7 @@ def test_edit_keeps_and_replaces_conditions(client):
                                        "amount_v": "10", "category_id": cat_id("Coffee")})
     assert count("SELECT COUNT(*) FROM rule_conditions WHERE rule_id=?", rid) == 2
     page = client.get("/rules").text
-    assert "description equals “C”" in page and "amount (either direction) ≥ $10.00" in page
+    assert "description equals “C”" in page and "amount at least $10.00" in page
 
 
 def test_old_rules_get_a_condition(tmp_path):
@@ -142,62 +142,129 @@ def test_old_rules_get_a_condition(tmp_path):
         assert [tuple(r) for r in rows] == [("text", "starts_with", "AMZN")]
 
 
-# ---------- signed amounts (regression: "< -50" used to behave like "< 50") and shadowed rules
+# ---------- amounts: positive size + direction (a typed minus sign means "money out")
 
-def test_negative_amounts_compare_signed():
+def test_amounts_are_sizes_with_direction():
     from app import rules
     txs = {"BIG": -12000, "SMALL": -2000, "REFUND": 6000, "EXACT": -4210}
 
-    def hits(op, v, v2=None):
-        [c] = rules.validate_conditions([{"field": "amount", "op": op, "value": v, "value2": v2}])
-        return sorted(n for n, a in txs.items() if rules.cond_matches(c, n, None, a))
+    def hits(conds):
+        cs = rules.validate_conditions(conds)
+        return sorted(n for n, a in txs.items() if all(rules.cond_matches(c, n, None, a) for c in cs))
 
-    assert hits("lt", -5000) == ["BIG"]                         # spent more than $50
-    assert hits("gt", -5000) == ["EXACT", "REFUND", "SMALL"]
-    assert hits("lte", -12000) == ["BIG"]
-    assert hits("between", -1000, -6000) == ["EXACT", "SMALL"]  # order of bounds doesn't matter
-    assert hits("between", -3000, 7000) == ["REFUND", "SMALL"]   # -42.10 is below -30
-    assert hits("eq", -4210) == ["EXACT"]
-    # positive numbers still mean "size, either direction"
-    assert hits("gt", 5000) == ["BIG", "REFUND"]
-    assert hits("lt", 5000) == ["EXACT", "SMALL"]
-    assert hits("eq", 4210) == ["EXACT"]
+    amt = lambda op, v, v2=None: {"field": "amount", "op": op, "value": v, "value2": v2}
+    out = {"field": "direction", "value": "out"}
+    inn = {"field": "direction", "value": "in"}
+    assert hits([amt("gt", 5000)]) == ["BIG", "REFUND"]                 # size, either direction
+    assert hits([amt("gt", 5000), out]) == ["BIG"]                      # spent more than $50
+    assert hits([amt("gt", 5000), inn]) == ["REFUND"]
+    assert hits([amt("lt", 5000), out]) == ["EXACT", "SMALL"]
+    assert hits([amt("between", 6000, 1000), out]) == ["EXACT", "SMALL"]   # bound order doesn't matter
+    assert hits([amt("eq", 4210)]) == ["EXACT"]
+    assert hits([amt("eq", 4210), inn]) == []
+    # a minus sign typed anyway = money out, same size
+    assert hits([amt("gt", -5000)]) == ["BIG"]
+    assert hits([amt("eq", -4210)]) == ["EXACT"]
+    # "any amount" left selected but a number typed = equals
+    assert hits([{"field": "amount", "op": "", "value": 4210, "value2": None}]) == ["EXACT"]
+    import pytest
+    with pytest.raises(rules.RuleError):
+        rules.validate_conditions([amt("eq", -4210), inn])
 
 
-def test_negative_amount_rule_end_to_end(client):
-    acct = make_account(client, "Neg")
+def test_rules_saved_by_previous_version_still_work():
+    """v0.4 stored negative numbers for 'money out' amounts; they keep meaning money out."""
+    from app import rules
+    c = {"field": "amount", "op": "lt", "value": "-5000", "value2": None}
+    assert rules.cond_matches(c, "", None, -12000) is False   # -120 is not "less than 50 out"
+    assert rules.cond_matches(c, "", None, -2000) is True
+    assert rules.cond_matches(c, "", None, 2000) is False
+
+
+def test_description_and_amount_rule_end_to_end(client):
+    acct = make_account(client, "E2E")
     load_checking(client, acct)   # costco -142.18, starbucks -5.75 x2, payroll +3200, utilities -88.40
-    r = client.post("/rules", data={"amount_op": "lt", "amount_v": "-100", "category_id": cat_id("Shopping"),
-                                    "reapply": "uncategorized"})
-    assert "Rules updated 1 transaction." in r.text          # only Costco
-    assert "amount &lt; -$100.00" in client.get("/rules").text
-    rid = re.search(r'action="/rules/(\d+)"', client.get("/rules").text).group(1)
-    # editing keeps the minus sign in the form
-    assert 'name="amount_v" size="9" inputmode="decimal" placeholder="e.g. -100" value="-100.00"' in client.get("/rules").text
-    client.post(f"/rules/{rid}", data={"amount_op": "between", "amount_v": "-100", "amount_v2": "-50",
-                                       "category_id": cat_id("Utilities"), "reapply": "uncategorized"})
-    assert "1 transaction " in client.get(f"/transactions?category={cat_id('Utilities')}").text
+    # exactly what the browser sends: blank extra rows included
+    form = {"t_field": ["text", "text"], "t_op": ["contains", "contains"], "t_value": ["starbucks", ""],
+            "amount_op": "eq", "amount_v": "5.75", "amount_v2": "", "direction": "out", "account_id": "",
+            "category_id": cat_id("Coffee"), "rename_to": "", "priority": "100", "reapply": "uncategorized"}
+    assert "Rules updated 2 transactions" in client.post("/rules", data=form).text
+    page = client.get("/rules").text
+    assert "amount equals $5.75" in page and "money out" in page
+    # editing shows the positive number back
+    assert 'value="5.75"' in page
+    # amount alone + direction
+    r = client.post("/rules", data={"amount_op": "gt", "amount_v": "100", "direction": "out",
+                                    "category_id": cat_id("Shopping"), "reapply": "uncategorized"})
+    assert "Rules updated 1 transaction." in r.text           # Costco only (payroll is money in)
+    # matches the name shown in the app after a rename, not only the bank's text
+    client.post("/rules", data={"t_field": "text", "t_op": "contains", "t_value": "ACME", "category_id": cat_id("Salary"),
+                                "rename_to": "My Employer", "priority": "1", "reapply": "uncategorized"})
+    r = client.post("/rules", data={"t_field": "payee", "t_op": "equals", "t_value": "My Employer",
+                                    "amount_op": "eq", "amount_v": "3200", "direction": "in",
+                                    "category_id": cat_id("Other Income"), "priority": "0", "reapply": "force"})
+    assert "1 transaction " in client.get(f"/transactions?category={cat_id('Other Income')}").text
+
+
+def test_amount_typed_with_any_amount_selected_is_kept(client):
+    """Regression: the browser sends amount_op='' when the dropdown is left alone; the amount was dropped."""
+    acct = make_account(client, "Any")
+    load_checking(client, acct)
+    r = client.post("/rules", data={"t_field": ["text", "text"], "t_op": ["contains", "contains"],
+                                    "t_value": ["starbucks", ""], "amount_op": "", "amount_v": "5.75", "amount_v2": "",
+                                    "direction": "out", "category_id": cat_id("Coffee"), "reapply": "uncategorized"})
+    assert "Rules updated 2 transactions" in r.text
+    assert "amount equals $5.75" in client.get("/rules").text
+    client.post("/rules", data={"t_field": "text", "t_op": "contains", "t_value": "costco", "amount_op": "",
+                                "amount_v": "1.00", "category_id": cat_id("Groceries"), "reapply": "uncategorized"})
+    assert "0 transactions" in client.get(f"/transactions?category={cat_id('Groceries')}").text  # $1 ≠ $142.18
 
 
 def test_shadowed_rule_is_flagged(client):
     acct = make_account(client, "Sh")
     load_checking(client, acct)
     client.post("/rules", data={"t_field": "text", "t_op": "contains", "t_value": "STARBUCKS", "category_id": cat_id("Dining")})
-    client.post("/rules", data={"t_field": "text", "t_op": "contains", "t_value": "STARBUCKS", "amount_op": "lt",
-                                "amount_v": "-5", "category_id": cat_id("Coffee")})
+    client.post("/rules", data={"t_field": "text", "t_op": "contains", "t_value": "STARBUCKS", "amount_op": "gt",
+                                "amount_v": "5", "direction": "out", "category_id": cat_id("Coffee")})
     from app import db, rules
     with db.connect() as c:
         m = rules.match_counts(c)
     general, specific = sorted(m)
-    assert m[general]["wins"] == 2 and m[specific] ["wins"] == 0 and m[specific]["shadowed"] == 2
+    assert m[general]["wins"] == 2 and m[specific]["wins"] == 0 and m[specific]["shadowed"] == 2
     assert "+2 taken by earlier rule" in client.get("/rules").text
-    # giving the specific rule a lower priority number fixes it
     client.post(f"/rules/{specific}", data={"t_field": "text", "t_op": "contains", "t_value": "STARBUCKS",
-                                            "amount_op": "lt", "amount_v": "-5", "category_id": cat_id("Coffee"),
-                                            "priority": "10", "reapply": "all"})
+                                            "amount_op": "gt", "amount_v": "5", "direction": "out",
+                                            "category_id": cat_id("Coffee"), "priority": "10", "reapply": "all"})
     with db.connect() as c:
         m = rules.match_counts(c)
     assert m[specific]["wins"] == 2 and m[general]["wins"] == 0
+
+
+# ---------- amount filters on Transactions
+
+def test_transaction_amount_filters(client):
+    acct = make_account(client, "Flt")
+    load_checking(client, acct)
+    n = lambda url: int(re.search(r"(\d+) transactions? ·", client.get(url).text).group(1))
+    assert n("/transactions?amt_op=eq&amt=5.75") == 2
+    assert n("/transactions?amt_op=eq&amt=-5.75") == 2                 # minus sign ignored: it's a size
+    assert n("/transactions?amt_op=gt&amt=100") == 2                   # costco + payroll
+    assert n("/transactions?amt_op=gt&amt=100&flow=out") == 1
+    assert n("/transactions?flow=in") == 1
+    assert n("/transactions?amt_op=between&amt=5&amt2=90") == 3        # starbucks x2 + utilities
+    assert n("/transactions?amt_op=lte&amt=88.40&flow=out") == 3
+    assert n("/transactions?amt=142.18") == 1                          # no operator = equals
+    assert n("/transactions?q=5.75") == 2                              # a number in search finds the amount
+    assert n("/transactions?q=$3,200.00") == 1
+    assert n("/transactions?q=starbucks&amt_op=lt&amt=6") == 2         # text AND amount
+    assert n("/transactions?amt_op=gt&amt=abc") == 5                   # junk is ignored, not an error
+    # bulk "all matching this filter" respects the amount filter
+    r = client.post("/transactions/bulk", data={"scope": "filter", "f_amt_op": "gt", "f_amt": "100", "f_flow": "out",
+                                                "category_id": cat_id("Groceries")})
+    assert "Updated 1 transaction." in r.text
+    assert client.get("/export.csv?amt_op=eq&amt=5.75").text.count("STARBUCKS") == 2
+    html = client.get("/transactions?amt_op=gt&amt=100&sort=amount&dir=asc").text
+    assert "amt_op=gt&amt=100&sort=amount&dir=desc" in html            # sort links keep the filter
 
 
 def test_force_reapply_overrides_hand_set_only_when_asked(client):

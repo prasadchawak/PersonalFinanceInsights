@@ -24,20 +24,16 @@
         <option value="">any amount</option>
         {% for k, label in amount_ops.items() %}<option value="{{ k }}" {{ 'selected' if ac and ac.op == k }}>amount {{ label }}</option>{% endfor %}
       </select>
-      <input name="amount_v" size="9" inputmode="decimal" placeholder="e.g. -100" value="{{ '%.2f'|format(ac.value|int / 100) if ac }}">
-      <span class="v2 {{ 'hidden' if not (ac and ac.op == 'between') }}">and <input name="amount_v2" size="9" inputmode="decimal" placeholder="e.g. -10"
-            value="{{ '%.2f'|format(ac.value2|int / 100) if ac and ac.value2 }}"></span>
-      <small class="muted hint">Negative = as on your statement (“&lt; -100” = spent more than $100).
-        Positive = size in either direction (“&gt; 100” = any transaction over $100).</small>
-    </div>
-    <div class="condrow">
-      <span class="and">and</span>
+      <span class="money">$<input name="amount_v" size="9" inputmode="decimal" placeholder="24.85" value="{{ '%.2f'|format((ac.value|int)|abs / 100) if ac }}"></span>
+      <span class="v2 {{ 'hidden' if not (ac and ac.op == 'between') }}">and $<input name="amount_v2" size="9" inputmode="decimal" placeholder="50.00"
+            value="{{ '%.2f'|format((ac.value2|int)|abs / 100) if ac and ac.value2 }}"></span>
       <select name="direction">
-        <option value="">money in or out</option>
+        <option value="">in or out</option>
         <option value="out" {{ 'selected' if r and r.direction == 'out' }}>money out (purchases, payments)</option>
         <option value="in" {{ 'selected' if r and r.direction == 'in' }}>money in (deposits, refunds)</option>
       </select>
     </div>
+    <p class="muted small hint">Type amounts as positive numbers, e.g. 24.85, and pick money out or in. Typing an amount with “any amount” selected means “equals”.</p>
     <div class="condrow">
       <span class="and">and</span>
       <select name="account_id"><option value="">any account</option>
@@ -71,7 +67,7 @@
 <details class="card newrule" {{ 'open' if prefill.pattern or not rules or (error and not edit) }}>
   <summary><h2>New rule</h2></summary>
   <form method="post" action="/rules">{{ rule_form() }}</form>
-  <p class="muted small">Example: description contains “AMAZON” <b>and</b> amount &lt; -200 → Electronics (Amazon purchases over $200).
+  <p class="muted small">Example: description contains “AMAZON” <b>and</b> amount more than $200 <b>and</b> money out → Electronics.
     Put specific rules at a lower priority number than general ones (e.g. 10 vs 100) so they win. For “either A or B”, make two rules.</p>
 </details>
 

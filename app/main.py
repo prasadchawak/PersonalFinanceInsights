@@ -369,7 +369,33 @@ def delete_profile(profile_id: int):
 # ---------------------------------------------------------------- transactions
 
 
-def _tx_filters(conn_, account, category, month, q, start=None, end=None):
+AMOUNT_FILTER_OPS = {"eq": "=", "gt": ">", "gte": "≥", "lt": "<", "lte": "≤", "between": "between"}
+
+
+def _amount_where(op, v1, v2):
+    """SQL on the size of the transaction (ABS), so you always type positive numbers."""
+    from .normalize import parse_amount_cents
+    try:
+        a = abs(parse_amount_cents(v1)) if v1 not in (None, "") else None
+        b = abs(parse_amount_cents(v2)) if v2 not in (None, "") else None
+    except ValueError:
+        return None, []
+    if a is None:
+        return None, []
+    op = op if op in AMOUNT_FILTER_OPS else "eq"
+    if op == "between":
+        lo, hi = sorted([a, b if b is not None else a])
+        return "ABS(t.amount_cents) BETWEEN ? AND ?", [lo, hi]
+    sql_op = {"eq": "=", "gt": ">", "gte": ">=", "lt": "<", "lte": "<="}[op]
+    return f"ABS(t.amount_cents) {sql_op} ?", [a]
+
+
+def _looks_like_amount(q: str) -> bool:
+    return bool(re.fullmatch(r"[-+]?\$?\s*\d{1,3}(,\d{3})*(\.\d{1,2})?|[-+]?\$?\s*\d+(\.\d{1,2})?", q.strip()))
+
+
+def _tx_filters(conn_, account, category, month, q, start=None, end=None, amt_op=None, amt=None, amt2=None,
+                flow=None):
     where, args = [], []
     account = _int(account)
     if account:
@@ -388,8 +414,22 @@ def _tx_filters(conn_, account, category, month, q, start=None, end=None):
     if end and re.fullmatch(r"\d{4}-\d{2}-\d{2}", end):
         where.append("t.posted_date <= ?"); args.append(end)
     if q:
-        where.append("(t.payee LIKE ? OR t.payee_raw LIKE ? OR t.memo LIKE ? OR t.notes LIKE ?)")
-        args += [f"%{q}%"] * 4
+        q = q.strip()
+        if _looks_like_amount(q):
+            # A number in the search box also finds transactions of exactly that size.
+            amt_sql, amt_args = _amount_where("eq", q, None)
+            where.append(f"(t.payee LIKE ? OR t.payee_raw LIKE ? OR t.memo LIKE ? OR t.notes LIKE ? OR {amt_sql})")
+            args += [f"%{q}%"] * 4 + amt_args
+        else:
+            where.append("(t.payee LIKE ? OR t.payee_raw LIKE ? OR t.memo LIKE ? OR t.notes LIKE ?)")
+            args += [f"%{q}%"] * 4
+    amt_sql, amt_args = _amount_where(amt_op, amt, amt2)
+    if amt_sql:
+        where.append(amt_sql); args += amt_args
+    if flow == "out":
+        where.append("t.amount_cents < 0")
+    elif flow == "in":
+        where.append("t.amount_cents > 0")
     return (" WHERE " + " AND ".join(where)) if where else "", args
 
 
@@ -409,13 +449,14 @@ SORTS = {
 def transactions(request: Request, account: str | None = None, category: str | None = None,
                  month: str | None = None, q: str | None = None, start: str | None = None,
                  end: str | None = None, page: str | None = None, updated: str | None = None,
-                 sort: str = "date", dir: str | None = None):
+                 sort: str = "date", dir: str | None = None, amt_op: str | None = None, amt: str | None = None,
+                 amt2: str | None = None, flow: str | None = None):
     page = max(_int(page) or 1, 1)
     sort = sort if sort in SORTS else "date"
     dir = dir if dir in ("asc", "desc") else SORTS[sort][1]
     with conn() as c:
         tree = cats.load(c)
-        where, args = _tx_filters(c, account, category, month, q, start, end)
+        where, args = _tx_filters(c, account, category, month, q, start, end, amt_op, amt, amt2, flow)
         total, total_cents = c.execute(
             f"SELECT COUNT(*), COALESCE(SUM(t.amount_cents),0) FROM transactions t{where}", args).fetchone()
         order = SORTS[sort][0].format(d=dir.upper())
@@ -429,11 +470,12 @@ def transactions(request: Request, account: str | None = None, category: str | N
         accounts = c.execute("SELECT id, name FROM accounts ORDER BY name").fetchall()
         split_map = splits.for_transactions(c, [t["id"] for t in txns])
     f = {"account": _int(account), "category": category or "", "month": month or "", "q": q or "",
-         "start": start or "", "end": end or "", "sort": sort, "dir": dir}
+         "start": start or "", "end": end or "", "sort": sort, "dir": dir, "amt_op": amt_op or "",
+         "amt": amt or "", "amt2": amt2 or "", "flow": flow or ""}
     return render(request, "transactions.html", txns=txns, accounts=accounts, cat_list=tree.ordered(),
                   tree=tree, f=f, total=total, total_cents=total_cents, page=page,
                   pages=max(1, -(-total // PAGE_SIZE)), updated=_int(updated), split_map=split_map,
-                  sort_defaults={k: v[1] for k, v in SORTS.items()})
+                  sort_defaults={k: v[1] for k, v in SORTS.items()}, amount_ops=AMOUNT_FILTER_OPS)
 
 
 @app.post("/transactions/bulk")
@@ -447,7 +489,8 @@ async def bulk_update(request: Request):
     with conn() as c:
         if form.get("scope") == "filter":
             where, args = _tx_filters(c, form.get("f_account"), form.get("f_category"), form.get("f_month"),
-                                      form.get("f_q"), form.get("f_start"), form.get("f_end"))
+                                      form.get("f_q"), form.get("f_start"), form.get("f_end"), form.get("f_amt_op"),
+                                      form.get("f_amt"), form.get("f_amt2"), form.get("f_flow"))
             ids = [r[0] for r in c.execute(f"SELECT t.id FROM transactions t{where}", args)]
         else:
             ids = [i for i in (_int(v) for v in form.getlist("ids")) if i]
@@ -485,11 +528,12 @@ def update_tx(request: Request, tx_id: int, category_id: str = Form(""), payee: 
 
 @app.get("/export.csv")
 def export(account: str | None = None, category: str | None = None, month: str | None = None,
-           q: str | None = None, start: str | None = None, end: str | None = None):
+           q: str | None = None, start: str | None = None, end: str | None = None, amt_op: str | None = None,
+           amt: str | None = None, amt2: str | None = None, flow: str | None = None):
     """One row per line: split transactions export one row per split, marked in the 'split' column."""
     with conn() as c:
         tree = cats.load(c)
-        where, args = _tx_filters(c, account, category, month, q, start, end)
+        where, args = _tx_filters(c, account, category, month, q, start, end, amt_op, amt, amt2, flow)
         rows = c.execute(f"""SELECT t.posted_date, a.name, t.payee, t.payee_raw, t.memo, l.amount_cents,
                                     l.category_id, COALESCE(t.notes,''), l.is_split, t.amount_cents
                              FROM transactions t JOIN accounts a ON a.id = t.account_id
@@ -757,7 +801,8 @@ def _conds_from_form(form) -> list[dict]:
     for f, op, v in zip(form.getlist("t_field"), form.getlist("t_op"), form.getlist("t_value")):
         conds.append({"field": f, "op": op, "value": v})
     a_op, a_v, a_v2 = form.get("amount_op") or "", (form.get("amount_v") or "").strip(), (form.get("amount_v2") or "").strip()
-    if a_op and a_v:
+    if a_v:  # an amount typed with the test left on "any amount" means "equals"
+        a_op = a_op or "eq"
         try:
             v1 = parse_amount_cents(a_v)
             v2 = parse_amount_cents(a_v2) if a_v2 else None
@@ -776,7 +821,7 @@ async def _save_rule(request: Request, rule_id: int | None):
         with conn() as c:
             rules_mod.save(c, rule_id, _conds_from_form(form), _int(form.get("category_id")),
                            (form.get("rename_to") or "").strip() or None, _int(form.get("account_id")),
-                           _int(form.get("priority")) or 100)
+                           100 if _int(form.get("priority")) is None else _int(form.get("priority")))
             reapply = form.get("reapply") or ("uncategorized" if form.get("apply_now") else "")
             n = (rules_mod.apply_all(c, only_uncategorized=(reapply == "uncategorized"),
                                      include_hand_set=(reapply == "force")) if reapply else None)
