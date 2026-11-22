@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_macros.html" import cat_options %}
+{% block title %}Split transaction{% endblock %}
+{% block content %}
+<h1>Split transaction</h1>
+<section class="card">
+  <div class="row between">
+    <div><b>{{ tx.payee }}</b><br><small class="muted">{{ tx.posted_date }} · {{ tx.account_name }} · {{ tx.payee_raw }}</small></div>
+    <div class="bigamt {{ 'neg' if tx.amount_cents < 0 else 'pos' }}">{{ tx.amount_cents|money }}</div>
+  </div>
+</section>
+{% if error %}<p class="error notice-err">{{ error }}</p>{% endif %}
+
+<form method="post" class="card" id="splitform" data-total="{{ tx.amount_cents|abs }}">
+  <input type="hidden" name="back_to" value="{{ back_to }}">
+  <p class="muted small">Divide the {{ (tx.amount_cents|abs)|money }} across categories. Enter each part as a positive number; they must add up exactly.
+    (A negative part is allowed for things like a return inside a purchase.)</p>
+  <table class="splittable">
+    <thead><tr><th>Category</th><th class="num">Amount</th><th>Note (optional)</th></tr></thead>
+    {% for l in lines %}
+    <tr>
+      <td><select name="category_id"><option value="">— uncategorised —</option>{{ cat_options(cat_list, l.category_id) }}</select></td>
+      <td><input name="amount" class="splitamt num" inputmode="decimal" size="10" value="{{ '%.2f'|format(l.amount / 100) if l.amount is not none }}"></td>
+      <td><input name="memo" value="{{ l.memo }}" size="24"></td>
+    </tr>
+    {% endfor %}
+    <tfoot><tr><td class="num"><b>Remaining</b></td><td class="num"><b class="splitleft">—</b></td><td></td></tr></tfoot>
+  </table>
+  <div class="row">
+    <button class="btn" name="action" value="more" formnovalidate>More lines</button>
+    <button class="btn" type="button" id="fillrest">Put the remainder on the last filled line</button>
+    <button class="btn primary" name="action" value="save">Save split</button>
+    <a class="btn" href="{{ back_to }}">Cancel</a>
+  </div>
+</form>
+
+{% if is_split %}
+<form method="post" action="/transactions/{{ tx.id }}/unsplit" class="confirm" data-confirm="Remove the split? The transaction goes back to a single category (the largest part).">
+  <button class="btn danger">Remove split</button>
+</form>
+{% endif %}
+{% endblock %}

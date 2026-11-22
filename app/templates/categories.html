@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_macros.html" import cat_options %}
+{% block title %}Categories{% endblock %}
+{% block content %}
+<h1>Categories</h1>
+{% if error %}<p class="error notice-err">{{ error }}</p>{% endif %}
+{% if msg %}<p class="notice">{{ msg }}</p>{% endif %}
+
+<section class="card">
+  <h2>Add a category</h2>
+  <form method="post" action="/categories" class="formgrid">
+    <label>Name <input name="name" required></label>
+    <label>Inside
+      <select name="parent_id"><option value="">— top level —</option>
+        {{ cat_options(cat_list|selectattr('depth', 'lt', max_depth)|list) }}</select></label>
+    <label>Kind (top level only)
+      <select name="kind"><option value="expense">expense</option><option value="income">income</option><option value="transfer">transfer (ignored in spending)</option></select></label>
+    <button class="btn primary">Add</button>
+  </form>
+  <p class="muted small">Up to {{ max_depth }} levels, e.g. Food › Groceries › Costco. Subcategories take their top-level category's kind.
+    Use <b>transfer</b> for money moving between your own accounts (card payments, savings) so it isn't counted as spending.</p>
+</section>
+
+<section class="card flush">
+  <table class="cattree">
+    <thead><tr><th>Category</th><th>Kind</th><th class="num">Transactions</th><th>Rename</th><th>Move under</th><th></th></tr></thead>
+    {% for r in rows %}{% set c = r.cat %}
+    <tr class="d{{ c.depth }}">
+      <td class="catname"><a href="/transactions?category={{ c.id }}">{{ c.name }}</a></td>
+      <td class="small muted">{{ c.kind if c.depth == 1 }}</td>
+      <td class="num">{{ r.n }}{% if r.n_all != r.n %} <small class="muted" title="including subcategories">({{ r.n_all }})</small>{% endif %}</td>
+      <td><form method="post" action="/categories/{{ c.id }}/rename" class="inline">
+            <input name="name" value="{{ c.name }}" size="14" required><button class="btn">Save</button></form></td>
+      <td><form method="post" action="/categories/{{ c.id }}/move" class="inline">
+            <select name="parent_id" class="autosubmit">
+              <option value="" {{ 'selected' if not c.parent_id }}>— top level —</option>
+              {{ cat_options(r.dests, c.parent_id) }}
+            </select><noscript><button class="btn">Move</button></noscript></form></td>
+      <td><form method="post" action="/categories/{{ c.id }}/delete" class="inline confirm"
+                data-confirm="Delete “{{ c.path }}”?{% if c.children %} Its subcategories move up a level.{% endif %} Its {{ r.n }} transaction(s) {{ 'move to the parent category' if c.parent_id else 'become uncategorised' }}.">
+            <button class="btn danger" title="Delete">✕</button></form></td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endblock %}

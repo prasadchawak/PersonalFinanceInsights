@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Accounts{% endblock %}
+{% block content %}
+<h1>Accounts</h1>
+{% if error %}<p class="error notice-err">{{ error }}</p>{% endif %}
+{% if msg %}<p class="notice">{{ msg }}</p>{% endif %}
+
+<section class="card">
+  <h2>Add an account</h2>
+  <form method="post" action="/accounts" class="formgrid">
+    <label>Name <input name="name" required placeholder="e.g. Everyday Checking"></label>
+    <label>Bank / issuer <input name="institution" placeholder="e.g. My Bank"></label>
+    <label>Type
+      <select name="type">{% for t in types %}<option>{{ t }}</option>{% endfor %}</select>
+    </label>
+    <label>Opening balance <input name="opening_balance" value="0" inputmode="decimal"></label>
+    <button class="btn primary">Add account</button>
+  </form>
+  <p class="muted small">Opening balance = the balance just before the oldest transaction you'll import.
+    For credit cards and loans, enter what you owe as a negative number (e.g. -1250.00).</p>
+</section>
+
+{% if accounts %}
+<section class="card flush">
+  <table>
+    <thead><tr><th>Account</th><th>Bank / issuer</th><th>Type</th><th>Opening balance</th><th class="num">Transactions</th><th class="num">Balance</th><th></th></tr></thead>
+    {% for a in accounts %}
+    <tr>
+      <td><input name="name" value="{{ a.name }}" form="acct{{ a.id }}" required size="18"></td>
+      <td><input name="institution" value="{{ a.institution or '' }}" form="acct{{ a.id }}" size="14"></td>
+      <td><select name="type" form="acct{{ a.id }}">{% for t in types %}<option {{ 'selected' if t == a.type }}>{{ t }}</option>{% endfor %}</select></td>
+      <td><input name="opening_balance" value="{{ '%.2f'|format(a.opening_balance_cents / 100) }}" form="acct{{ a.id }}" size="10" inputmode="decimal"></td>
+      <td class="num"><a href="/transactions?account={{ a.id }}">{{ a.tx_count }}</a></td>
+      <td class="num {{ 'neg' if a.balance_cents < 0 }}">{{ a.balance_cents|money }}</td>
+      <td><form method="post" action="/accounts/{{ a.id }}" id="acct{{ a.id }}" class="inline"><button class="btn">Save</button></form></td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+<p class="muted small">Renaming an account keeps all its transactions, rules and import history.</p>
+{% endif %}
+{% endblock %}

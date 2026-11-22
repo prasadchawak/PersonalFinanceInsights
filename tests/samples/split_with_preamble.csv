@@ -1,0 +1,8 @@
+Account Name:,Sample Savings
+Account Number:,XXXX1234
+Date Range:,01-Oct-2026 to 31-Oct-2026
+
+Transaction Date,Narrative,Withdrawals,Deposits,Balance
+02-Oct-2026,TRANSFER FROM CHECKING,,"500.00","10,500.00"
+15-Oct-2026,MONTHLY FEE,2.00,,"10,498.00"
+31-Oct-2026,INTEREST PAID,,12.34,"10,510.34"

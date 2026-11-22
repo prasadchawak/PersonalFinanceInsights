@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Map columns{% endblock %}
+{% block content %}
+<h1>Map this bank's columns</h1>
+<p class="muted">First time seeing this layout from <b>{{ meta.filename }}</b> → <b>{{ account.name }}</b>. Check the guesses below, preview, then import. You only do this once per bank.</p>
+
+<section class="card">
+  <h2>File as it looks</h2>
+  <div class="scroll"><table class="raw">
+    {% for r in raw %}<tr class="{{ 'hdr' if loop.index0 == mapping.header_row }}"><th class="muted">{{ loop.index0 }}</th>{% for c in r %}<td>{{ c }}</td>{% endfor %}</tr>{% endfor %}
+  </table></div>
+</section>
+
+<form method="post" class="card">
+  <h2>Columns</h2>
+  {% macro colsel(name, label, optional=False) %}
+    <label>{{ label }}
+      <select name="{{ name }}">
+        <option value="">{{ '— none —' if optional else '— choose —' }}</option>
+        {% for h in headers %}<option {{ 'selected' if mapping[name] == h }}>{{ h }}</option>{% endfor %}
+      </select>
+    </label>
+  {% endmacro %}
+  <div class="formgrid">
+    <label>Header is on row <input type="number" name="header_row" min="0" value="{{ mapping.header_row }}"></label>
+    {{ colsel('date_col', 'Date') }}
+    <label>Date format
+      <select name="date_format">
+        <option value="">— choose —</option>
+        {% for f in date_formats %}<option value="{{ f }}" {{ 'selected' if mapping.date_format == f }}>{{ f.replace('%Y','yyyy').replace('%y','yy').replace('%m','mm').replace('%d','dd').replace('%b','Mon') }}</option>{% endfor %}
+      </select>
+    </label>
+    {{ colsel('description_col', 'Description') }}
+    {{ colsel('memo_col', 'Extra memo (optional)', True) }}
+  </div>
+
+  <h2>Amounts</h2>
+  <div class="formgrid">
+    <label class="radio"><input type="radio" name="amount_mode" value="single" {{ 'checked' if mapping.amount_mode != 'split' }}> One amount column</label>
+    {{ colsel('amount_col', 'Amount column', True) }}
+    <label class="check"><input type="checkbox" name="negate" {{ 'checked' if mapping.negate }}> Flip sign (bank shows purchases as positive)</label>
+  </div>
+  <div class="formgrid">
+    <label class="radio"><input type="radio" name="amount_mode" value="split" {{ 'checked' if mapping.amount_mode == 'split' }}> Separate money-out / money-in columns</label>
+    {{ colsel('debit_col', 'Money out (debit)', True) }}
+    {{ colsel('credit_col', 'Money in (credit)', True) }}
+  </div>
+
+  {% if errors %}<ul class="error">{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+
+  {% if preview %}
+  <h2>Preview</h2>
+  <p class="muted small">Purchases should show in <span class="neg">red (negative)</span>, deposits and refunds in <span class="pos">green</span>. If it's backwards, tick "Flip sign" and preview again.</p>
+  <table>
+    <thead><tr><th>Date</th><th>Description</th><th class="num">Amount</th></tr></thead>
+    {% for t in preview %}<tr><td>{{ t.posted_date }}</td><td>{{ t.payee_raw }}</td><td class="num {{ 'neg' if t.amount_cents < 0 else 'pos' }}">{{ t.amount_cents|money }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+  {% if row_errors %}<details class="error"><summary>{{ row_errors|length }} row(s) couldn't be read and will be skipped</summary><ul>{% for e in row_errors %}<li>{{ e }}</li>{% endfor %}</ul></details>{% endif %}
+
+  <div class="formgrid">
+    <label class="check"><input type="checkbox" name="save_profile" checked> Remember this layout as</label>
+    <label><input name="profile_name" value="{{ profile_name }}"></label>
+  </div>
+  <div class="row">
+    <button class="btn" name="action" value="preview">Preview</button>
+    {% if preview and not errors %}<button class="btn primary" name="action" value="import">Import {{ 'these' }} transactions</button>{% endif %}
+  </div>
+</form>
+{% endblock %}

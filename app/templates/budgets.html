@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Budgets{% endblock %}
+{% block content %}
+<div class="row between">
+  <h1>Budgets · {{ label }}</h1>
+  <div class="row">
+    <a class="btn" href="?month={{ prev_m }}&kind={{ kind }}&show={{ show }}">← {{ prev_m }}</a>
+    <a class="btn" href="?kind={{ kind }}&show={{ show }}">This month</a>
+    <a class="btn" href="?month={{ next_m }}&kind={{ kind }}&show={{ show }}">{{ next_m }} →</a>
+  </div>
+</div>
+{% if msg %}<p class="notice">{{ msg }}</p>{% endif %}
+
+<div class="tiles">
+  <div class="tile"><span>Budgeted</span><b>{{ ov.total_budget|money }}</b></div>
+  <div class="tile"><span>{{ 'Spent' if kind == 'expense' else 'Received' }} in budgeted categories</span><b>{{ ov.total_spent_budgeted|money }}</b></div>
+  <div class="tile"><span>{{ 'Left to spend' if kind == 'expense' else 'Still to come' }}</span>
+    {% set left = ov.total_budget - ov.total_spent_budgeted %}
+    <b class="{{ 'neg' if left < 0 and kind == 'expense' }}">{{ left|money }}{% if left < 0 and kind == 'expense' %} over{% endif %}</b></div>
+  <div class="tile"><span>All {{ 'spending' if kind == 'expense' else 'income' }} this month</span><b>{{ ov.total_spent|money }}</b>
+    {% if ov.uncategorised %}<small class="muted">+ {{ ov.uncategorised|money }} <a href="/transactions?category=none&month={{ month }}">uncategorised</a></small>{% endif %}</div>
+</div>
+
+<form method="get" class="filters">
+  <input type="hidden" name="month" value="{{ month }}">
+  <span class="seg">
+    <label class="{{ 'on' if kind == 'expense' }}"><input type="radio" name="kind" value="expense" class="autosubmit" {{ 'checked' if kind == 'expense' }}> Spending</label>
+    <label class="{{ 'on' if kind == 'income' }}"><input type="radio" name="kind" value="income" class="autosubmit" {{ 'checked' if kind == 'income' }}> Income</label>
+  </span>
+  <span class="seg">
+    <label class="{{ 'on' if show == 'budgeted' }}"><input type="radio" name="show" value="budgeted" class="autosubmit" {{ 'checked' if show == 'budgeted' }}> Budgeted or active</label>
+    <label class="{{ 'on' if show == 'all' }}"><input type="radio" name="show" value="all" class="autosubmit" {{ 'checked' if show == 'all' }}> All categories</label>
+  </span>
+</form>
+
+<form method="post" action="/budgets" class="card flush">
+  <input type="hidden" name="month" value="{{ month }}"><input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="show" value="{{ show }}">
+  <table class="budgets">
+    <thead><tr><th>Category</th><th>Budget</th><th class="num">{{ 'Spent' if kind == 'expense' else 'Received' }}</th><th>Progress</th><th class="num">{{ 'Left' if kind == 'expense' else 'To go' }}</th></tr></thead>
+    {% for r in rows %}{% set c = r.cat %}
+    <tr class="d{{ c.depth }} {{ 'over' if r.over and kind == 'expense' }}">
+      <td class="catname"><a href="/transactions?category={{ c.id }}&month={{ month }}">{{ c.name }}</a></td>
+      <td><input name="b_{{ c.id }}" value="{{ '%.2f'|format(r.budget / 100) if r.budget is not none }}" size="9" inputmode="decimal" placeholder="—">
+          {% if r.source == 'month' %}<small class="muted" title="Set for this month only{% if r.default is not none %}; usual: {{ r.default|money }}{% endif %}">this month</small>{% endif %}</td>
+      <td class="num">{{ r.spent|money }}</td>
+      <td>{% if r.bar %}{{ r.bar }} <small class="muted">{{ '%.0f'|format(100 * r.pct) }}%</small>{% endif %}</td>
+      <td class="num">{% if r.budget is not none %}{% set left = r.budget - r.spent %}
+          {% if left < 0 and kind == 'expense' %}<span class="neg">⚠ {{ (-left)|money }} over</span>{% else %}{{ left|money }}{% endif %}{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">No budgets or activity yet. Switch to “All categories” to start adding budgets.</td></tr>
+    {% endfor %}
+  </table>
+  <div class="row pad">
+    <label class="check"><input type="radio" name="scope" value="default" checked> Save as my monthly budget (every month)</label>
+    <label class="check"><input type="radio" name="scope" value="month"> Only for {{ label }}</label>
+    <button class="btn primary">Save budgets</button>
+  </div>
+  <p class="muted small pad">A parent's spending includes all its subcategories. Totals count a parent's budget once even if its subcategories have budgets too.
+    To skip a category for one month, enter 0 and choose “Only for {{ label }}”. Clear a box to remove that budget.</p>
+</form>
+{% endblock %}

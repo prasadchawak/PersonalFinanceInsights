@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% from "_macros.html" import cat_options, legend %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<h1>Reports</h1>
+
+<nav class="tabs">
+  {% for key, label in reports %}
+  <a href="?report={{ key }}&period={{ period }}{% if period == 'custom' %}&start={{ start }}&end={{ end }}{% endif %}{% if account %}&account={{ account }}{% endif %}"
+     class="{{ 'on' if key == report }}">{{ label }}</a>
+  {% endfor %}
+</nav>
+
+<form method="get" class="filters">
+  <input type="hidden" name="report" value="{{ report }}">
+  <select name="period" class="autosubmit period">
+    {% for k, label in periods %}<option value="{{ k }}" {{ 'selected' if k == period }}>{{ label }}</option>{% endfor %}
+  </select>
+  <span class="custom-range {{ 'hidden' if period != 'custom' }}">
+    <input type="date" name="start" value="{{ start }}"> to <input type="date" name="end" value="{{ end }}">
+  </span>
+  {% if report != 'networth' %}
+  <select name="account" class="autosubmit"><option value="">All accounts</option>
+    {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if account == a.id }}>{{ a.name }}</option>{% endfor %}</select>
+  {% endif %}
+  {% if report in ('spending', 'income') %}
+    <select name="within" class="autosubmit" title="Show the subcategories of one category">
+      <option value="">All categories</option>
+      {% for p in parents if p.kind == ('expense' if report == 'spending' else 'income') %}
+      <option value="{{ p.id }}" {{ 'selected' if within and within.id == p.id }}>{{ '    ' * (p.depth - 1) }}Subcategories of {{ p.name }}</option>{% endfor %}
+    </select>
+    {% if not within %}
+    <select name="level" class="autosubmit" title="How deep to break down categories">
+      <option value="1" {{ 'selected' if level == 1 }}>Top-level categories</option>
+      <option value="2" {{ 'selected' if level == 2 }}>Down to level 2</option>
+      <option value="3" {{ 'selected' if level == 3 }}>Down to level 3</option>
+    </select>{% endif %}
+    <span class="seg">
+      <label class="{{ 'on' if view == 'pie' }}"><input type="radio" name="view" value="pie" class="autosubmit" {{ 'checked' if view == 'pie' }}> Pie</label>
+      <label class="{{ 'on' if view == 'bar' }}"><input type="radio" name="view" value="bar" class="autosubmit" {{ 'checked' if view == 'bar' }}> Bar</label>
+    </span>
+  {% endif %}
+  {% if report == 'merchants' and not payee %}
+  <select name="category" class="autosubmit"><option value="">All spending categories</option>{{ cat_options(cat_list|selectattr('kind','equalto','expense')|list, category) }}</select>
+    <span class="seg">
+      <label class="{{ 'on' if view == 'pie' }}"><input type="radio" name="view" value="pie" class="autosubmit" {{ 'checked' if view == 'pie' }}> Pie</label>
+      <label class="{{ 'on' if view == 'bar' }}"><input type="radio" name="view" value="bar" class="autosubmit" {{ 'checked' if view == 'bar' }}> Bar</label>
+    </span>
+  {% endif %}
+  {% if payee %}<input type="hidden" name="payee" value="{{ payee }}">{% endif %}
+  {% if report == 'trend' %}
+  <select name="category" class="autosubmit"><option value="">All spending</option>{{ cat_options(cat_list, category) }}</select>
+  {% endif %}
+  <button class="btn">Show</button>
+</form>
+<p class="muted small">{{ start }} to {{ end }}. Transfers between your own accounts are never counted as income or spending.</p>
+
+{% set base = '?report=' ~ report ~ '&period=custom&start=' ~ start ~ '&end=' ~ end ~ ('&account=' ~ account if account else '') ~ '&view=' ~ view %}
+{% set txbase = '/transactions?start=' ~ start ~ '&end=' ~ end ~ ('&account=' ~ account if account else '') %}
+
+{% if report in ('spending', 'income') %}
+<section class="card">
+  {% if within %}
+  <p class="crumbs"><a href="{{ base }}">All</a>{% for b in breadcrumb %} › {% if loop.last %}<b>{{ b.name }}</b>{% else %}<a href="{{ base }}&within={{ b.id }}">{{ b.name }}</a>{% endif %}{% endfor %}</p>
+  {% endif %}
+  {% if items %}
+    <div class="row between"><h2>{{ 'Spending' if report == 'spending' else 'Income' }}{{ ' in ' ~ within.name if within }}: {{ total|money }}</h2></div>
+    {% if view == 'pie' %}
+      <div class="piewrap big">{{ chart }}{{ legend(legend_items) }}</div>
+    {% else %}
+      {{ chart }}
+    {% endif %}
+    <table class="datatable">
+      <thead><tr><th>Category</th><th class="num">Amount</th><th class="num">Share</th><th></th></tr></thead>
+      {% for it in items %}
+      <tr><td>{% if it.id %}<a href="{{ txbase }}&category={{ it.id }}">{{ it.label }}</a>{% else %}<a href="{{ txbase }}&category=none">{{ it.label }}</a>{% endif %}</td>
+          <td class="num">{{ it.value|money }}</td><td class="num">{{ '%.1f'|format(100 * it.value / total) }}%</td>
+          <td>{% if it.has_children %}<a class="small" href="{{ base }}&within={{ it.id }}">break down →</a>{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+  {% else %}<p class="muted">Nothing in this period.</p>{% endif %}
+</section>
+
+{% elif report == 'cashflow' %}
+<div class="tiles">
+  <div class="tile"><span>Income</span><b>{{ totals.income|money }}</b></div>
+  <div class="tile"><span>Expenses</span><b>{{ totals.expense|money }}</b></div>
+  <div class="tile"><span>Net</span><b class="{{ 'pos' if totals.net >= 0 else 'neg' }}">{{ totals.net|money }}</b></div>
+  <div class="tile"><span>Savings rate</span><b>{{ ('%.0f'|format(100 * totals.net / totals.income) ~ '%') if totals.income > 0 else '—' }}</b></div>
+</div>
+<section class="card">
+  <h2>Income vs expenses by month</h2>
+  {{ legend([{'cls':'s1','label':'Income'},{'cls':'s2','label':'Expenses'}]) }}
+  {{ chart }}
+</section>
+<section class="card">
+  <h2>Net (income − expenses) by month</h2>
+  {{ net_chart }}
+  <table class="datatable">
+    <thead><tr><th>Month</th><th class="num">Income</th><th class="num">Expenses</th><th class="num">Net</th><th class="num">Savings rate</th></tr></thead>
+    {% for r in rows %}<tr><td><a href="/transactions?month={{ r.month }}{{ '&account=' ~ account if account }}">{{ r.month }}</a></td>
+      <td class="num">{{ r.income|money }}</td><td class="num">{{ r.expense|money }}</td>
+      <td class="num {{ 'pos' if r.net >= 0 else 'neg' }}">{{ r.net|money }}</td>
+      <td class="num">{{ ('%.0f'|format(100 * r.rate) ~ '%') if r.rate is not none else '—' }}</td></tr>{% endfor %}
+  </table>
+</section>
+
+{% elif report == 'trend' %}
+<div class="tiles">
+  <div class="tile"><span>Total</span><b>{{ total|money }}</b></div>
+  <div class="tile"><span>Monthly average</span><b>{{ avg|money }}</b></div>
+</div>
+<section class="card">
+  <h2>{{ series_name }} by month</h2>
+  {{ chart }}
+  <table class="datatable">
+    <thead><tr><th>Month</th><th class="num">Amount</th></tr></thead>
+    {% for r in rows %}<tr><td><a href="/transactions?month={{ r.month }}{{ '&category=' ~ category if category }}{{ '&account=' ~ account if account }}">{{ r.month }}</a></td><td class="num">{{ r.value|money }}</td></tr>{% endfor %}
+  </table>
+</section>
+
+{% elif report == 'networth' %}
+<section class="card">
+  <h2>Net worth at each month end</h2>
+  {{ legend([{'cls':'s1','label':'Net worth'},{'cls':'s3','label':'Assets'},{'cls':'s2','label':'Debts'}]) }}
+  {{ chart }}
+  <table class="datatable">
+    <thead><tr><th>Month end</th><th class="num">Assets</th><th class="num">Debts</th><th class="num">Net worth</th></tr></thead>
+    {% for r in rows %}<tr><td>{{ r.month }}</td><td class="num">{{ r.assets|money }}</td><td class="num">{{ r.debts|money }}</td><td class="num">{{ r.net|money }}</td></tr>{% endfor %}
+  </table>
+  <p class="muted small">Only as accurate as your opening balances and imports. Investment accounts show cash moved in and out, not market value.</p>
+</section>
+
+{% elif report == 'merchants' and payee %}
+<p class="crumbs"><a href="?report=merchants&period=custom&start={{ start }}&end={{ end }}{{ '&account=' ~ account if account }}">All merchants</a> › <b>{{ payee }}</b></p>
+<div class="tiles">
+  <div class="tile"><span>Total spent</span><b>{{ detail.total|money }}</b></div>
+  <div class="tile"><span>Transactions</span><b>{{ detail.n }}</b></div>
+  <div class="tile"><span>Average per transaction</span><b>{{ detail.avg|money }}</b></div>
+</div>
+<section class="card">
+  <div class="row between"><h2>{{ payee }} by month</h2><a class="small" href="{{ txbase }}&q={{ payee|urlencode }}">See transactions →</a></div>
+  {{ chart }}
+</section>
+{% if cat_chart %}
+<section class="card">
+  <h2>Which categories {{ payee }} falls under</h2>
+  <div class="piewrap">{{ cat_chart }}{{ legend(legend_items) }}</div>
+</section>
+{% endif %}
+
+{% elif report == 'merchants' %}
+<section class="card">
+  {% if items %}
+    <h2>Top {{ items|length }} merchants{{ ' in ' ~ tree.by_id[category].path if category in tree.by_id }}: {{ total|money }}</h2>
+    {% if view == 'pie' %}<div class="piewrap big">{{ chart }}{{ legend(legend_items) }}</div>{% else %}{{ chart }}{% endif %}
+    <table class="datatable">
+      <thead><tr><th>Merchant</th><th class="num">Transactions</th><th class="num">Average</th><th class="num">Total</th><th class="num">Share</th><th>Last</th></tr></thead>
+      {% for it in items %}<tr>
+        <td><a href="?report=merchants&period=custom&start={{ start }}&end={{ end }}{{ '&account=' ~ account if account }}&payee={{ it.label|urlencode }}">{{ it.label }}</a></td>
+        <td class="num">{{ it.n }}</td><td class="num">{{ it.avg|money }}</td><td class="num">{{ it.value|money }}</td>
+        <td class="num">{{ '%.1f'|format(100 * it.value / total) }}%</td><td class="small muted">{{ it.last }}</td></tr>{% endfor %}
+    </table>
+    <p class="muted small">Merchants are grouped by payee name. Use a rule's “rename payee” (e.g. every “AMZN Mktp…” → “Amazon”) to merge variants.</p>
+  {% else %}<p class="muted">No spending in this period.</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Import{% endblock %}
+{% block content %}
+<h1>Import a statement</h1>
+{% if not accounts %}
+  <p class="notice">Add an account first. <a href="/accounts">Go to Accounts →</a></p>
+{% else %}
+<section class="card">
+  <form method="post" action="/import" enctype="multipart/form-data" class="formgrid">
+    <label>Into account
+      <select name="account_id" required>{% for a in accounts %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select>
+    </label>
+    <label>File (.ofx, .qfx or .csv) <input type="file" name="file" accept=".ofx,.qfx,.qbo,.csv,.txt" required></label>
+    <button class="btn primary">Import</button>
+  </form>
+  <p class="muted small">Tip: if your bank offers <b>OFX / QFX / "Quicken" / "Web Connect"</b> downloads, use those — they're standardised and de-duplicate exactly.
+    For CSV, you'll map the columns once per bank and the app remembers the layout.
+    Re-importing an overlapping date range is safe: duplicates are skipped.</p>
+</section>
+{% endif %}
+
+{% if history %}
+<section class="card">
+  <h2>Import history</h2>
+  <table>
+    <thead><tr><th>When</th><th>Account</th><th>File</th><th class="num">New</th><th class="num">Duplicates</th><th></th></tr></thead>
+    {% for i in history %}
+    <tr><td>{{ i.imported_at }}</td><td>{{ i.account }}</td><td>{{ i.filename }} <small class="muted">{{ i.format }}</small></td>
+        <td class="num">{{ i.rows_new }}</td><td class="num">{{ i.rows_duplicate }}</td>
+        <td><form method="post" action="/imports/{{ i.id }}/undo" class="inline confirm" data-confirm="Remove the {{ i.rows_new }} transactions added by this import?">
+              <button class="btn danger">Undo</button></form></td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+
+{% if profiles %}
+<section class="card">
+  <h2>Saved CSV layouts</h2>
+  <p class="muted small">The app recognises a bank's CSV by its header row. Delete a layout to re-map it next import.</p>
+  <table>
+    {% for p in profiles %}
+    <tr><td>{{ p.name }}</td><td class="muted small">saved {{ p.created_at }}</td>
+        <td><form method="post" action="/profiles/{{ p.id }}/delete" class="inline confirm" data-confirm="Forget this CSV layout?"><button class="btn">Forget</button></form></td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% from "_macros.html" import legend %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+{% if not accounts %}
+<section class="card empty">
+  <h1>Welcome to Personal Finance Insights</h1>
+  <p>Start by adding the accounts you want to track (checking, credit cards, savings…), then import a statement.</p>
+  <a class="btn primary" href="/accounts">Add your first account</a>
+</section>
+{% else %}
+<div class="row between">
+  <h1>Overview</h1>
+  <form method="get" class="inline">
+    <select name="month" class="autosubmit">
+      {% for m in months %}<option value="{{ m }}" {{ 'selected' if m == month }}>{{ m }}</option>{% endfor %}
+    </select>
+  </form>
+</div>
+
+<div class="tiles">
+  <div class="tile"><span>Spent in {{ month }}</span><b>{{ summary.spent|money }}</b></div>
+  <div class="tile"><span>Earned in {{ month }}</span><b>{{ summary.earned|money }}</b></div>
+  <div class="tile"><span>Net</span><b class="{{ 'pos' if summary.net >= 0 else 'neg' }}">{{ summary.net|money }}</b></div>
+  <div class="tile"><span>Net worth (tracked accounts)</span><b>{{ (assets + debts)|money }}</b></div>
+</div>
+
+{% if uncategorized %}
+<p class="notice">{{ uncategorized }} transaction{{ 's' if uncategorized != 1 }} need a category.
+  <a href="/transactions?category=none">Sort them →</a></p>
+{% endif %}
+
+<div class="grid2">
+  <section class="card">
+    <div class="row between"><h2>Spending by category</h2>
+      <a class="small" href="/reports?report=spending&period=custom&start={{ m_start }}&end={{ m_end }}">Details →</a></div>
+    {% if spending %}
+      <div class="piewrap">{{ pie }}
+        <table class="legendtable">
+          {% for it in spending %}<tr>
+            <td><span class="swatch {{ it.cls }}"></span>
+              {% if it.id %}<a href="/transactions?category={{ it.id }}&month={{ month }}">{{ it.label }}</a>
+              {% elif it.other %}{{ it.label }}{% else %}<a href="/transactions?category=none&month={{ month }}">{{ it.label }}</a>{% endif %}</td>
+            <td class="num">{{ it.value|money }}</td></tr>{% endfor %}
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">No spending recorded for this month.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Accounts</h2>
+    <table>
+      {% for a in accounts %}
+      <tr><td><a href="/transactions?account={{ a.id }}">{{ a.name }}</a><br><small class="muted">{{ a.type }}{% if a.last_date %} · through {{ a.last_date }}{% endif %}</small></td>
+          <td class="num {{ 'neg' if a.balance_cents < 0 }}">{{ a.balance_cents|money }}</td></tr>
+      {% endfor %}
+    </table>
+    <p class="muted small">Balances = opening balance + imported transactions. Set opening balances on the Accounts page.</p>
+  </section>
+</div>
+
+{% set brows = budget.rows|selectattr('budget', 'ne', none)|list %}
+{% if brows %}
+<section class="card">
+  <div class="row between"><h2>Budgets this month: {{ budget.total_spent_budgeted|money }} of {{ budget.total_budget|money }}</h2>
+    <a class="small" href="/budgets?month={{ month }}">Manage →</a></div>
+  <table>
+    {% for r in (brows|sort(attribute='pct', reverse=True))[:6] %}
+    <tr><td>{{ r.cat.path }}</td><td>{{ r.bar }}</td>
+        <td class="num">{% if r.over %}<span class="neg">⚠ {{ (r.spent - r.budget)|money }} over</span>{% else %}{{ (r.budget - r.spent)|money }} left{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+
+<section class="card">
+  <div class="row between"><h2>Income vs expenses, last 6 months</h2>
+    <a class="small" href="/reports?report=cashflow&period=12m">More →</a></div>
+  {{ legend([{'cls':'s1','label':'Income'},{'cls':'s2','label':'Expenses'}]) }}
+  {{ trend_chart }}
+</section>
+{% endif %}
+{% endblock %}

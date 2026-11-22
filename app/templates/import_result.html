@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Imported{% endblock %}
+{% block content %}
+<h1>Import finished</h1>
+<section class="card">
+  <p><b>{{ filename }}</b>{% if profile %} — recognised as <b>{{ profile }}</b>{% endif %}</p>
+  <div class="tiles">
+    <div class="tile"><span>Rows read</span><b>{{ result.total }}</b></div>
+    <div class="tile"><span>New</span><b class="pos">{{ result.new }}</b></div>
+    <div class="tile"><span>Already had</span><b>{{ result.duplicate }}</b></div>
+    <div class="tile"><span>Skipped (unreadable)</span><b class="{{ 'neg' if result.errors }}">{{ result.errors|length }}</b></div>
+  </div>
+  {% if result.errors %}<details class="error"><summary>Rows that were skipped</summary><ul>{% for e in result.errors[:50] %}<li>{{ e }}</li>{% endfor %}</ul></details>{% endif %}
+  <div class="row">
+    <a class="btn primary" href="/transactions?category=none">Categorise new transactions</a>
+    <a class="btn" href="/import">Import another</a>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% macro cat_options(cat_list, selected=None, exclude=()) -%}
+  {%- for c in cat_list if c.id not in exclude -%}
+    <option value="{{ c.id }}" {{ 'selected' if selected == c.id }} title="{{ c.path }}">{{ '    ' * (c.depth - 1) }}{{ '└ ' if c.depth > 1 }}{{ c.name }}</option>
+  {%- endfor -%}
+{%- endmacro %}
+
+{% macro legend(items) -%}
+<ul class="legend">
+  {% for it in items %}<li><span class="swatch {{ it.cls }}"></span>{{ it.label }}</li>{% endfor %}
+</ul>
+{%- endmacro %}

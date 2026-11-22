@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_macros.html" import cat_options %}
+{% block title %}Rules{% endblock %}
+{% block content %}
+<h1>Categorisation rules</h1>
+<p class="muted">Rules run on every import. The first match wins (lowest priority number first). They never overwrite a category you set by hand.</p>
+{% if applied is not none %}<p class="notice">Rules updated {{ applied }} transaction{{ 's' if applied != 1 }}.</p>{% endif %}
+{% if saved %}<p class="notice">Rule saved. Use “re-run” below if you want it applied to existing transactions.</p>{% endif %}
+{% if error %}<p class="error notice-err">{{ error }}</p>{% endif %}
+
+<section class="card">
+  <h2>New rule</h2>
+  <form method="post" action="/rules" class="formgrid">
+    <label>When description
+      <select name="match_type">
+        <option value="contains">contains</option><option value="starts_with">starts with</option>
+        <option value="equals">equals</option><option value="regex">matches regex</option>
+      </select></label>
+    <label>Text <input name="pattern" required value="{{ prefill.pattern }}"></label>
+    <label>Set category
+      <select name="category_id"><option value="">— leave as is —</option>
+        {{ cat_options(cat_list, prefill.category_id) }}</select></label>
+    <label>Rename payee to (optional) <input name="rename_to" placeholder="e.g. Costco"></label>
+    <label>Only for account
+      <select name="account_id"><option value="">any account</option>
+        {% for a in accounts %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select></label>
+    <label>Priority <input type="number" name="priority" value="100"></label>
+    <label class="check"><input type="checkbox" name="apply_now" checked> Apply to uncategorised transactions now</label>
+    <button class="btn primary">Add rule</button>
+  </form>
+  <p class="muted small">Tip: trim the text to the stable part — "COSTCO WHSE #0123 SEATTLE" works better as just "COSTCO".</p>
+</section>
+
+{% if rules %}
+<section class="card">
+  <div class="row between"><h2>Your rules</h2>
+    <form method="post" action="/rules/apply" class="inline">
+      <select name="scope"><option value="uncategorized">uncategorised only</option><option value="all">all (except hand-set)</option></select>
+      <button class="btn">Re-run rules</button></form></div>
+  <table class="rules">
+    <thead><tr><th>#</th><th>When</th><th>Then</th><th>Account</th><th class="num" title="Transactions this rule currently wins">Matches</th><th></th></tr></thead>
+    {% for r in rules %}
+    <tr><td>{{ r.priority }}</td>
+        <td>{{ r.match_type.replace('_',' ') }} <code>{{ r.pattern }}</code></td>
+        <td>{% if r.category_id in tree.by_id %}→ {{ tree.by_id[r.category_id].path }}{% endif %}{% if r.rename_to %} · rename “{{ r.rename_to }}”{% endif %}</td>
+        <td class="small">{{ r.account_name or 'any' }}</td>
+        <td class="num {{ 'muted' if not matches.get(r.id) }}">{{ matches.get(r.id, 0) }}</td>
+        <td class="nowrap">
+          <details class="ruleedit"><summary class="btn">Edit</summary>
+            <form method="post" action="/rules/{{ r.id }}" class="formgrid">
+              <label>When description
+                <select name="match_type">{% for v, l in [('contains','contains'),('starts_with','starts with'),('equals','equals'),('regex','matches regex')] %}
+                  <option value="{{ v }}" {{ 'selected' if r.match_type == v }}>{{ l }}</option>{% endfor %}</select></label>
+              <label>Text <input name="pattern" value="{{ r.pattern }}" required></label>
+              <label>Set category
+                <select name="category_id"><option value="">— leave as is —</option>{{ cat_options(cat_list, r.category_id) }}</select></label>
+              <label>Rename payee to <input name="rename_to" value="{{ r.rename_to or '' }}"></label>
+              <label>Only for account
+                <select name="account_id"><option value="">any account</option>
+                  {% for a in accounts %}<option value="{{ a.id }}" {{ 'selected' if a.id == r.account_id }}>{{ a.name }}</option>{% endfor %}</select></label>
+              <label>Priority <input type="number" name="priority" value="{{ r.priority }}"></label>
+              <label>After saving
+                <select name="reapply"><option value="">don't change existing transactions</option>
+                  <option value="uncategorized">apply rules to uncategorised</option>
+                  <option value="all">re-apply rules to all (except hand-set)</option></select></label>
+              <button class="btn primary">Save rule</button>
+            </form>
+          </details>
+          <form method="post" action="/rules/{{ r.id }}/delete" class="inline confirm" data-confirm="Delete this rule? Transactions it already categorised keep their category."><button class="btn danger">Delete</button></form>
+        </td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+{% endblock %}
