@@ -6,16 +6,56 @@ It runs on your own computer and nothing else. There is no account, no cloud, no
 - The server listens on `127.0.0.1` only, so other devices on your Wi-Fi can't connect.
 - Pages may only load files from the app itself (a Content-Security-Policy blocks every outside source).
 - Requests are refused if they don't come from `localhost`/`127.0.0.1` (this stops DNS-rebinding attacks) or if they're cross-site form posts (this stops CSRF). Other websites open in your browser can't reach the app's data.
-- All your data is in SQLite files in the `data` folder: `data\finance.db`, plus one file per extra [organisation](#organisations).
+- All your data is in SQLite files in the `data` folder: `data/finance.db`, plus one file per extra [organisation](#organisations).
 
-## Run it (Windows)
+It runs on **Windows, macOS and Linux**.
 
-1. Install Python 3.11 or newer from python.org, and tick **"Add python.exe to PATH"** during setup.
-2. Unzip this folder somewhere, for example `C:\Users\you\PersonalFinanceInsights`.
-3. Double-click **`run.bat`**. The first run sets up a private Python environment, which takes about a minute. After that, the app opens at http://127.0.0.1:8765.
-4. To stop the app, close the black window or press Ctrl+C in it.
+## Run it
 
-On macOS or Linux, run `./run.sh` instead.
+You need **Python 3.11 or newer** (3.10 also works). The first start creates a private Python environment in the app's folder (`.venv`), which takes about a minute. After that the app opens in your browser at http://127.0.0.1:8765. To stop it, close the terminal window or press **Ctrl+C** in it.
+
+Get the code with `git clone https://github.com/prasadchawak/PersonalFinanceInsights.git`, or download it as a ZIP from GitHub and unzip it.
+
+### Windows
+
+1. Install Python from [python.org](https://www.python.org/downloads/). During setup, tick **"Add python.exe to PATH"**.
+2. Put the folder somewhere, for example `C:\Users\you\PersonalFinanceInsights`.
+3. Double-click **`run.bat`**.
+
+### macOS
+
+1. Install Python 3.11 or newer, either with the installer from [python.org](https://www.python.org/downloads/macos/) or with Homebrew: `brew install python@3.12`. The `python3` that comes with Xcode's command line tools is too old.
+2. Open **Terminal**, go to the folder, and start the app:
+   ```sh
+   cd ~/PersonalFinanceInsights
+   sh run.sh
+   ```
+   (`./run.sh` works too. If macOS says the file isn't executable, which can happen after a ZIP download, use `sh run.sh` or run `chmod +x run.sh backup.sh` once.)
+
+### Linux
+
+1. Install Python and its venv module:
+   - **Ubuntu / Debian:** `sudo apt install python3 python3-venv`
+   - **Fedora:** `sudo dnf install python3`
+   - **Arch:** `sudo pacman -S python`
+2. In a terminal:
+   ```sh
+   cd ~/PersonalFinanceInsights
+   sh run.sh
+   ```
+3. If your distribution's Python is older than 3.10, install a newer one and point the script to it: `PYTHON=python3.12 sh run.sh`.
+
+On a machine with no desktop, set `PFI_NO_BROWSER=1` so the app doesn't try to open a browser. It still only accepts connections from that same machine.
+
+### Everyday commands
+
+| | Windows | macOS / Linux |
+|---|---|---|
+| Start the app | double-click `run.bat` | `sh run.sh` |
+| Back up all data | double-click `backup.bat` | `sh backup.sh` |
+| Run the app's Python | `.venv\Scripts\python` | `.venv/bin/python` |
+| Set a setting for one start | `set PFI_PORT=8766` then `run.bat` | `PFI_PORT=8766 sh run.sh` |
+| Where your data is | `data\` | `data/` |
 
 ## Quick help
 
@@ -169,11 +209,16 @@ Use organisations to keep separate books, for example for another person, a rent
 | I imported the wrong file | *Import → history → Undo* removes everything that import added. |
 | Page says *Cross-site request blocked* | Open the app at `http://127.0.0.1:8765` (not another address or a bookmark to an old port). |
 | A card's rewards look wrong | Open the card from **Rewards → By card** and check its bonus rules: categories (anything shown as *needs a category* isn't mapped yet), the cap and period, dates, and whether the bonus is marked **activated**. Purchases need categories to match category bonuses. |
-| Port 8765 is already in use | `set PFI_PORT=8766` then `run.bat`. |
-| Starting fresh / moving computers | Stop the app and copy the whole `data` folder. Run `backup.bat` before any upgrade. |
+| Port 8765 is already in use | Windows: `set PFI_PORT=8766` then `run.bat`. macOS/Linux: `PFI_PORT=8766 sh run.sh`. |
+| Starting fresh / moving computers | Stop the app and copy the whole `data` folder; it works across Windows, macOS and Linux. Run a backup (`backup.bat` or `sh backup.sh`) before any upgrade. |
+| `run.sh` says Python is missing or too old (macOS/Linux) | Install Python 3.11+ as described in [Run it](#run-it), or point to a newer one: `PYTHON=python3.12 sh run.sh`. |
+| "Could not create the environment" (Linux) | Install the venv module: `sudo apt install python3-venv` on Debian/Ubuntu. |
 
 ### Try it with demo data
 
+Start the app once first (so `.venv` exists), stop it, then:
+
+**Windows**
 ```
 .venv\Scripts\pip install -r requirements-dev.txt
 .venv\Scripts\python tools\make_demo.py demo-data
@@ -181,7 +226,12 @@ set PFI_DATA_DIR=demo-data
 run.bat
 ```
 
-(Run `run.bat` once first so `.venv` exists.)
+**macOS / Linux**
+```sh
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python tools/make_demo.py demo-data
+PFI_DATA_DIR=demo-data sh run.sh
+```
 
 This builds a separate folder of made-up accounts, transactions and three demo credit cards with rewards set up, which are the ones in these screenshots. To regenerate the screenshots, see [`tools/take_screenshots.py`](tools/take_screenshots.py). Your real `data` folder isn't touched. Delete `demo-data` when you're done.
 
@@ -200,7 +250,7 @@ This builds a separate folder of made-up accounts, transactions and three demo c
 7. **Split transactions:** click **split** on any transaction to divide it across categories, for example one Costco charge split into Groceries and Household. The editor shows how much is left to assign, and the parts must add up exactly. Reports, budgets and filters all use the split parts. Rules never change a split transaction, and choosing a single category for it (or bulk-setting one) replaces the split.
 8. **Budgets:** set a monthly amount for any category or subcategory. Save it as your usual monthly budget, or for one month only. A parent's spending includes everything under it, and totals never count a parent and its children twice. The Overview page shows the budgets closest to their limit.
 9. **Merchants report:** spending by merchant as a pie or bar chart, optionally within one category. Click a merchant to see its month-by-month trend and which categories it falls under. To merge name variants into one merchant, use a rule's "rename payee".
-10. **Accounts and rules can be edited:** rename an account or change its type and opening balance. To **delete** an account, open "Delete an account" on the Accounts page and type its name to confirm. This permanently removes its transactions (including splits), its import history and any rules limited to that account. Run `backup.bat` first.
+10. **Accounts and rules can be edited:** rename an account or change its type and opening balance. To **delete** an account, open "Delete an account" on the Accounts page and type its name to confirm. This permanently removes its transactions (including splits), its import history and any rules limited to that account. Run a backup first (`backup.bat`, or `sh backup.sh` on macOS/Linux).
 11. **Rules with several conditions (AND):** a rule can combine any number of text conditions (description or memo, description only, or memo only; using contains, doesn't contain, starts with, equals or matches regex) with an amount test and a money-in or money-out choice, plus an account. All of them must match. "Description" matches both the bank's original text and the name shown in the app after a rename. **Amounts are typed as positive numbers** (e.g. 24.85), with equals, more than, at least, less than, at most or between, and **money out or in is picked separately**. A typed minus sign is read as "money out", and an amount typed while "any amount" is selected means "equals". Example: description contains "AMAZON" **and** amount more than $200 **and** money out → Electronics. For "either A or B", make two rules. Each rule shows how many transactions it currently matches, and flags "taken by earlier rule" when a rule with a lower priority number (or an older one with the same priority) catches them first; give the rule a lower number (0 is allowed) to fix that. Rules never replace categories you set by hand (🔒) unless you choose "re-apply to all, including hand-set".
 12. **Sorting:** click any column header on Transactions (date, payee, account, category or amount) to sort by it, and click again to reverse. Sorting keeps your filters.
     **Amount filters:** on Transactions, filter by amount (equals, more than, at least, less than, at most, between; always positive numbers) and by money out or in. These combine with the other filters, sorting, bulk edit and CSV export. Typing a number such as `24.85` or `$3,200` into the search box also finds transactions of exactly that amount.
@@ -216,21 +266,23 @@ This builds a separate folder of made-up accounts, transactions and three demo c
 
 ## Backups
 
-Double-click **`backup.bat`** (or run `python -m app.backup`). It writes a consistent snapshot of **every organisation's database plus the organisation list** to a dated folder in `data\backups\`, and is safe to run while the app is open. Copy those files to an external drive or another place you trust.
+On Windows double-click **`backup.bat`**; on macOS or Linux run **`sh backup.sh`**. It writes a consistent snapshot of **every organisation's database plus the organisation list** to a dated folder in `data/backups/`, and is safe to run while the app is open. Copy those files to an external drive or another place you trust.
 
-Recommended: turn on BitLocker (Windows full-disk encryption) so the database is encrypted at rest if the laptop is lost.
+To restore, stop the app and copy the backed-up files back into the `data` folder (`orgs.db` to `data/`, `finance.db` to `data/`, and any `orgs/*.db` to `data/orgs/`).
+
+Recommended: turn on full-disk encryption so the database is encrypted at rest if the computer is lost: **BitLocker** (or Device Encryption) on Windows, **FileVault** on macOS, and **LUKS** on Linux (usually chosen when installing the system).
 
 ## Settings (environment variables)
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `PFI_PORT` | `8765` | Port to listen on |
-| `PFI_DATA_DIR` | `.\data` | Where the database and backups live |
+| `PFI_DATA_DIR` | `data` in the app folder | Where the database and backups live |
 | `PFI_NO_BROWSER` | unset | Set to `1` to stop the app opening the browser on start |
 
 The older `TALLY_*` names still work.
 
-**Upgrading from Tally:** this app used to be called Tally. On first start, an existing `data\tally.db` is renamed to `data\finance.db` automatically (only when no `finance.db` exists yet), so all your data carries over.
+**Upgrading from Tally:** this app used to be called Tally. On first start, an existing `data/tally.db` is renamed to `data/finance.db` automatically (only when no `finance.db` exists yet), so all your data carries over.
 
 ## How it's built
 
