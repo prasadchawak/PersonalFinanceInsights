@@ -227,3 +227,7 @@ To run the tests: `pip install -r requirements-dev.txt` then `pytest`.
 - **Phase 3:** PDF export of reports
 - **Phase 4:** credit-card rewards tracking, mortgage extra-payment scenarios
 - **Phase 5:** Docker image, passkey sign-in, encrypted backups, home-server deployment (Option 2)
+
+## License
+
+[MIT](LICENSE) © 2026 prasadchawak
