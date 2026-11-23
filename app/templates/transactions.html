@@ -107,7 +107,10 @@
       {% if cat and cat.depth > 1 %}<small class="muted crumb">{{ cat.path }}</small>{% endif %}
       {% endif %}
     </td>
-    <td class="num nowrap {{ 'neg' if t.amount_cents < 0 else 'pos' }}">{{ t.amount_cents|money }}</td>
+    <td class="num nowrap {{ 'neg' if t.amount_cents < 0 else 'pos' }}">{{ t.amount_cents|money }}
+      {% set rw = tx_rewards.get(t.id) %}
+      {% if rw %}<br><small class="rw {{ 'miss' if rw.missed >= 50 }}" title="Estimated reward{% if rw.missed >= 50 %}; {{ rw.best_card }} would have earned {{ rw.best|int|money }}{% endif %}">
+        {{ '+' if rw.value >= 0 }}{{ rw.value|int|money }}{% if rw.missed >= 50 %} ⚑{% endif %}</small>{% endif %}</td>
     <td class="nowrap">
       {% if not split_map.get(t.id) %}<a class="small" href="/transactions/{{ t.id }}/split?back={{ (request.url.path ~ ('?' ~ request.url.query if request.url.query else ''))|urlencode }}" title="Split across categories">split</a>{% endif %}
       <a class="small" href="/rules?pattern={{ t.payee_raw|urlencode }}{% if t.category_id %}&category_id={{ t.category_id }}{% endif %}" title="Make a rule from this payee">+ rule</a>

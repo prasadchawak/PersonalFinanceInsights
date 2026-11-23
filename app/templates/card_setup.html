@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Card rewards{% endblock %}
+
+{% macro rule_form(r=None, cat_ids=()) %}
+  <div class="formgrid">
+    <label>Label <input name="label" value="{{ r.label if r }}" placeholder="e.g. Dining" required size="26"></label>
+    <label>Rate <span class="money"><input name="rate" value="{{ ('%g'|format(r.rate)) if r }}" size="5" inputmode="decimal" required>
+      {{ '%' if prog and prog.unit == 'cash' else 'x per $1' }}</span></label>
+    <label>Categories (each includes its subcategories)
+      <select name="category_ids" multiple size="5" class="multi">
+        {% for c in cat_list if c.kind == 'expense' %}<option value="{{ c.id }}" {{ 'selected' if c.id in cat_ids }}>{{ '    ' * (c.depth - 1) }}{{ c.name }}</option>{% endfor %}
+      </select></label>
+    <label>Merchants (description contains any of, separated by commas)
+      <input name="merchants" value="{{ (r.merchants or '').replace('|', ', ') if r }}" placeholder="e.g. AMAZON, WHOLE FOODS" size="30"></label>
+    <label>…but not these
+      <input name="exclude" value="{{ (r.exclude or '').replace('|', ', ') if r }}" placeholder="e.g. WALMART, TARGET" size="24"></label>
+  </div>
+  <div class="formgrid">
+    <label>Spending cap at this rate <span class="money">$<input name="cap" value="{{ '%.2f'|format(r.cap_cents / 100) if r and r.cap_cents }}" size="9" inputmode="decimal" placeholder="none"></span></label>
+    <label>per
+      <select name="cap_period"><option value="">—</option>
+        {% for p in ['month','quarter','year'] %}<option {{ 'selected' if r and r.cap_period == p }}>{{ p }}</option>{% endfor %}</select></label>
+    <label title="Rules with the same name here share one cap">Shared cap name <input name="cap_group" value="{{ r.cap_group or '' if r }}" size="12" placeholder="optional"></label>
+    <label>From <input type="date" name="start_date" value="{{ r.start_date or '' if r }}"></label>
+    <label>To <input type="date" name="end_date" value="{{ r.end_date or '' if r }}"></label>
+    <label class="check"><input type="checkbox" name="needs_activation" {{ 'checked' if r and r.needs_activation }}> needs activation</label>
+    <label class="check"><input type="checkbox" name="activated" {{ 'checked' if not r or r.activated }}> activated</label>
+    <button class="btn primary">{{ 'Save rule' if r else 'Add rule' }}</button>
+  </div>
+{% endmacro %}
+
+{% block content %}
+<p class="crumbs"><a href="/accounts">Accounts</a> › <a href="/rewards">Rewards</a> › <b>{{ acct.name }}</b></p>
+<h1>{{ acct.name }} · card rewards</h1>
+{% if error %}<p class="error notice-err">{{ error }}</p>{% endif %}
+{% if msg %}<p class="notice">{{ msg }}</p>{% endif %}
+
+{% if acct.type != 'credit' %}
+<p class="notice">Rewards are for credit cards. Change this account's type to <b>credit</b> on the <a href="/accounts">Accounts</a> page first.</p>
+{% else %}
+
+<section class="card">
+  <h2>{{ 'Change card' if prog else 'Which card is this?' }}</h2>
+  <form method="post" action="/accounts/{{ acct.id }}/rewards/apply" class="formgrid {{ 'confirm' if prog }}"
+        data-confirm="Replace this account's earn rules with the chosen card's standard terms?">
+    <label>Card ({{ catalog.cards|length }} popular US cards + generic templates)
+      <select name="catalog_key" required>
+        <option value="">— choose —</option>
+        {% for issuer, cards in groups %}
+        <optgroup label="{{ 'Generic' if issuer == '—' else issuer }}">
+          {% for card in cards %}<option value="{{ card.key }}" {{ 'selected' if (prog and prog.catalog_key == card.key) or (not prog and suggestion == card.key) }}>{{ card.name }}{{ ' ⚠' if card.verify }}</option>{% endfor %}
+        </optgroup>
+        {% endfor %}
+      </select></label>
+    <button class="btn primary">{{ 'Use these terms' if prog else 'Set up rewards' }}</button>
+  </form>
+  <p class="muted small">Standard terms were looked up in {{ catalog.checked }} and live in a file inside the app. Nothing is fetched from the internet.
+    Issuers change terms, and ⚠ marks cards where a detail couldn't be confirmed, so check the bonus rules below against your card agreement.
+    Rotating 5% cards need each quarter's categories added when the issuer announces them.
+    {% if suggestion and not prog %}<b>Pre-selected from the account name.</b>{% endif %}</p>
+</section>
+
+{% if prog %}
+<section class="card">
+  <h2>Card settings</h2>
+  <form method="post" action="/accounts/{{ acct.id }}/rewards" class="formgrid">
+    <label>Card name <input name="card_name" value="{{ prog.card_name }}" size="28"></label>
+    <label>Network <select name="network">{% for n in networks %}<option {{ 'selected' if prog.network == n }}>{{ n }}</option>{% endfor %}</select></label>
+    <label>Reward type <select name="unit">{% for u in units %}<option {{ 'selected' if prog.unit == u }}>{{ u }}</option>{% endfor %}</select></label>
+    <label title="What one point or mile is worth to you, in cents. 1.0 for cash back.">Value per {{ 'point' if prog.unit != 'cash' else 'unit' }} <span class="money"><input name="cpp" value="{{ '%g'|format(prog.cpp) }}" size="5" inputmode="decimal">¢</span></label>
+    <label>Base rate (everything else) <span class="money"><input name="base_rate" value="{{ '%g'|format(prog.base_rate) }}" size="5" inputmode="decimal"> {{ '%' if prog.unit == 'cash' else 'x' }}</span></label>
+    <label>Annual fee <span class="money">$<input name="annual_fee" value="{{ '%.2f'|format(prog.annual_fee_cents / 100) }}" size="8" inputmode="decimal"></span></label>
+    <button class="btn primary">Save</button>
+  </form>
+  <p class="muted small">
+    {% if prog.unit != 'cash' %}Points and miles are converted to cents using the value above, so different cards compare fairly. {% endif %}
+    Boost programs such as Bank of America Preferred Rewards multiply cash back. To include one, raise the value per unit (for example 1.75 for +75%).
+    {% if prog.notes %}<br><b>Note:</b> {{ prog.notes }}{% endif %}
+    {% if prog.terms_checked %}<br>Terms checked: {{ prog.terms_checked }}.{% endif %}</p>
+</section>
+
+<section class="card">
+  <h2>Bonus rules</h2>
+  <p class="muted small">A purchase earns the highest matching rate until that rule's cap is used up for the period, then the next rate, and finally the base rate.
+    All the conditions on a rule must match: category, merchant, and not-these merchants.</p>
+  <table class="earnrules">
+    <thead><tr><th>Rule</th><th class="num">Rate</th><th>Applies to</th><th>Cap</th><th>When</th><th></th></tr></thead>
+    {% for row in rules %}{% set r = row.r %}
+    <tr id="rule{{ r.id }}" class="{{ 'inactive' if r.needs_activation and not r.activated }}">
+      <td><b>{{ r.label }}</b>{% if r.unmapped %}<br><span class="excltag">needs a category: {{ r.unmapped }}</span>{% endif %}</td>
+      <td class="num nowrap">{{ '%g'|format(r.rate) }}{{ '%' if prog.unit == 'cash' else 'x' }}</td>
+      <td class="small">{% if row.cat_names %}{{ row.cat_names|join(', ') }}{% endif %}
+          {% if r.merchants %}{{ ' at ' if row.cat_names else '' }}<code>{{ r.merchants.replace('|', ', ') }}</code>{% endif %}
+          {% if r.exclude %}<br><span class="muted">not {{ r.exclude.replace('|', ', ') }}</span>{% endif %}</td>
+      <td class="small nowrap">{% if r.cap_cents %}{{ (r.cap_cents)|money }} / {{ r.cap_period }}{% if r.cap_group and not r.cap_group.startswith('rule') %}<br><span class="muted">shared: {{ r.cap_group }}</span>{% endif %}{% else %}—{% endif %}</td>
+      <td class="small nowrap">{% if r.start_date or r.end_date %}{{ r.start_date or '…' }} → {{ r.end_date or '…' }}{% else %}always{% endif %}
+          {% if r.needs_activation %}<br>{% if r.activated %}<span class="pos">✓ activated</span>{% else %}<span class="neg">⚠ not activated</span>{% endif %}{% endif %}</td>
+      <td class="nowrap">
+        <form method="post" action="/rewards/rules/{{ r.id }}/delete" class="inline confirm" data-confirm="Delete this bonus rule?"><button class="btn danger" title="Delete rule">✕</button></form>
+      </td>
+    </tr>
+    <tr class="editrow"><td colspan="6">
+      <details class="rowedit"><summary>✎ Edit this rule</summary>
+        <form method="post" action="/rewards/rules/{{ r.id }}">{{ rule_form(r, row.cat_ids) }}</form></details>
+    </td></tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">No bonus rules: everything earns the base rate.</td></tr>
+    {% endfor %}
+  </table>
+</section>
+
+<details class="card newrule" {{ 'open' if not rules }}>
+  <summary><h2>Add a bonus rule</h2></summary>
+  <form method="post" action="/accounts/{{ acct.id }}/rewards/rules">{{ rule_form() }}</form>
+  <p class="muted small">Example for a rotating 5% quarter: label "Q1: groceries", rate 5, category Groceries, cap $1,500 per quarter,
+    shared cap name "rotating", from and to dates set to the quarter, and "needs activation" ticked.</p>
+</details>
+
+<form method="post" action="/accounts/{{ acct.id }}/rewards/remove" class="confirm" data-confirm="Remove rewards tracking from this account?">
+  <button class="btn danger">Remove rewards from this account</button></form>
+{% endif %}
+{% endif %}
+{% endblock %}

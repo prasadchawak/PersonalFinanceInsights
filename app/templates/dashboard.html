@@ -76,6 +76,16 @@
 </section>
 {% endif %}
 
+{% if recs %}
+<section class="card">
+  <div class="row between"><h2>💳 Which card to use</h2><a class="small" href="/rewards">All rewards →</a></div>
+  <table>{% for r in recs[:5] %}<tr><td>{{ r.category }}</td><td><b>{{ r.best.program.account_name }}</b>
+    <small class="muted">{{ r.best.rule.label if r.best.rule else 'base rate' }}{% if r.best.cap %} · {{ r.best.cap.left|money }} left{% endif %}</small></td>
+    <td class="num">{{ '%.1f'|format(r.best.pct) }}%</td></tr>{% endfor %}</table>
+  {% if rw_alerts %}<p class="small"><a href="/rewards">⚠ {{ rw_alerts }} rewards to-do{{ 's' if rw_alerts != 1 }}</a></p>{% endif %}
+</section>
+{% endif %}
+
 <section class="card">
   <div class="row between"><h2>Income vs expenses, last 6 months</h2>
     <a class="small" href="/reports?report=cashflow&period=12m">More →</a></div>

@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import budgets as budgets_mod, categories as cats, charts, db, orgs, reports, rules as rules_mod, services, splits
+from . import budgets as budgets_mod, categories as cats, charts, db, orgs, reports, rewards, rules as rules_mod, services, splits
 from .importers import csv_import, ofx
 from .normalize import DATE_FORMATS, header_fingerprint
 
@@ -132,6 +132,8 @@ def dashboard(request: Request, month: str | None = None):
         uncategorized = c.execute("SELECT COUNT(DISTINCT tx_id) FROM report_lines WHERE category_id IS NULL").fetchone()[0]
         budget = budgets_mod.overview(c, month)
         excluded = reports.excluded_summary(c, m_start, m_end)
+        recs = rewards.recommendations(c, limit=5) if month == date.today().strftime("%Y-%m") else []
+        rw_alerts = len(rewards.alerts(c)) if recs else 0
         for r in budget["rows"]:
             r["bar"] = charts.progress(r["spent"], r["budget"], width=160) if r["budget"] else None
         months = [r[0] for r in c.execute(
@@ -144,7 +146,7 @@ def dashboard(request: Request, month: str | None = None):
         {"name": "Income", "cls": "s1", "values": [d["income"] for d in trend]},
         {"name": "Expenses", "cls": "s2", "values": [d["expense"] for d in trend]}], height=240)
     return render(request, "dashboard.html", accounts=accounts, summary=summary, month=month, months=months,
-                  uncategorized=uncategorized, budget=budget, excluded=excluded, assets=assets, debts=debts, spending=spending,
+                  uncategorized=uncategorized, budget=budget, excluded=excluded, recs=recs, rw_alerts=rw_alerts, assets=assets, debts=debts, spending=spending,
                   pie=charts.donut(spending, size=240), trend_chart=trend_chart, m_start=m_start, m_end=m_end)
 
 
@@ -169,7 +171,9 @@ ACCOUNT_TYPES = ["checking", "savings", "credit", "loan", "investment", "cash"]
 def accounts_page(request: Request, error: str | None = None, msg: str | None = None):
     with conn() as c:
         accounts = services.account_balances(c)
-    return render(request, "accounts.html", accounts=accounts, types=ACCOUNT_TYPES, error=error, msg=msg)
+        card_names = dict(c.execute("SELECT account_id, card_name FROM card_programs").fetchall())
+    return render(request, "accounts.html", accounts=accounts, types=ACCOUNT_TYPES, error=error, msg=msg,
+                  card_names=card_names)
 
 
 @app.post("/accounts")
@@ -496,6 +500,7 @@ def transactions(request: Request, account: str | None = None, category: str | N
         excluded_ids = {r[0] for r in c.execute(
             f"SELECT DISTINCT tx_id FROM tx_lines WHERE excluded = 1 AND tx_id IN ({','.join('?' * len(page_ids))})",
             page_ids)}
+        tx_rewards = _rewards_for(c, txns)
         excl_n, excl_cents = c.execute(
             f"SELECT COUNT(*), COALESCE(SUM(t.amount_cents), 0) FROM transactions t{where}"
             f"{' AND' if where else ' WHERE'} t.id IN (SELECT tx_id FROM tx_lines WHERE excluded = 1)", args).fetchone()
@@ -506,7 +511,27 @@ def transactions(request: Request, account: str | None = None, category: str | N
                   tree=tree, f=f, total=total, total_cents=total_cents, page=page,
                   pages=max(1, -(-total // PAGE_SIZE)), updated=_int(updated), split_map=split_map,
                   sort_defaults={k: v[1] for k, v in SORTS.items()}, amount_ops=AMOUNT_FILTER_OPS,
-                  excluded_ids=excluded_ids, excl_n=excl_n, excl_cents=excl_cents)
+                  excluded_ids=excluded_ids, excl_n=excl_n, excl_cents=excl_cents, tx_rewards=tx_rewards)
+
+
+def _rewards_for(c, txns) -> dict:
+    """Estimated reward per transaction on this page (credit cards with rewards set up only)."""
+    if not txns or not c.execute("SELECT 1 FROM card_programs LIMIT 1").fetchone():
+        return {}
+    ids = {t["id"] for t in txns}
+    lo, hi = min(t["posted_date"] for t in txns), max(t["posted_date"] for t in txns)
+    out: dict = {}
+    for ln in rewards.compute(c, lo, hi)["lines"]:
+        if ln["tx_id"] not in ids or ln["actual"] is None:
+            continue
+        e = out.setdefault(ln["tx_id"], {"value": 0.0, "best": 0.0, "best_card": None})
+        e["value"] += ln["actual"]["value"]
+        if ln["best"]:
+            e["best"] += ln["best"]["value"]
+            e["best_card"] = ln["best_card"].account_name
+    for e in out.values():
+        e["missed"] = e["best"] - e["value"] if e["best_card"] else 0
+    return out
 
 
 @app.post("/transactions/bulk")
@@ -1014,3 +1039,201 @@ def delete_org(request: Request, org_id: int, confirm_name: str = Form("")):
     if request.state.org["id"] == org_id:
         resp = _org_cookie(resp, orgs.all_orgs()[0]["id"])
     return resp
+
+
+# ---------------------------------------------------------------- credit card rewards
+
+def _cents(v) -> int | None:
+    from .normalize import parse_amount_cents
+    v = (v or "").strip()
+    if not v:
+        return None
+    try:
+        return abs(parse_amount_cents(v))
+    except ValueError:
+        raise rewards.RewardsError(f"“{v}” isn't an amount.")
+
+
+def _float(v, name) -> float:
+    try:
+        return float(str(v).strip().rstrip("%x"))
+    except ValueError:
+        raise rewards.RewardsError(f"{name} must be a number.")
+
+
+def _rw_redirect(account_id: int, msg: str = "", error: str = "", anchor: str = ""):
+    from urllib.parse import quote
+    q = f"?msg={quote(msg)}" if msg else (f"?error={quote(error)}" if error else "")
+    return RedirectResponse(f"/accounts/{account_id}/rewards{q}{anchor}", status_code=303)
+
+
+@app.get("/accounts/{account_id:int}/rewards", response_class=HTMLResponse)
+def card_setup(request: Request, account_id: int, msg: str | None = None, error: str | None = None):
+    with conn() as c:
+        acct = c.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+        if not acct:
+            raise HTTPException(404)
+        prog = c.execute("SELECT * FROM card_programs WHERE account_id = ?", (account_id,)).fetchone()
+        rules = c.execute("SELECT * FROM earn_rules WHERE account_id = ? ORDER BY rate DESC, id", (account_id,)).fetchall()
+        tree = cats.load(c)
+        suggestion = None
+        if not prog:
+            hay = f"{acct['name']} {acct['institution'] or ''}".lower()
+            for card in rewards.catalog()["cards"]:
+                words = [w for w in card["name"].lower().replace("(", " ").replace(")", " ").split() if len(w) > 3]
+                if words and sum(w in hay for w in words) >= 2:
+                    suggestion = card["key"]
+                    break
+    rule_rows = []
+    for r in rules:
+        ids = {int(x) for x in (r["category_ids"] or "").split(",") if x.strip()}
+        rule_rows.append({"r": r, "cat_ids": ids, "cat_names": [tree.by_id[i].path for i in ids if i in tree.by_id]})
+    return render(request, "card_setup.html", acct=acct, prog=prog, rules=rule_rows, groups=rewards.catalog_groups(),
+                  cat_list=tree.ordered(), msg=msg, error=error, suggestion=suggestion, networks=rewards.NETWORKS,
+                  units=rewards.UNITS, catalog=rewards.catalog())
+
+
+@app.post("/accounts/{account_id:int}/rewards/apply")
+def card_apply(account_id: int, catalog_key: str = Form(...)):
+    try:
+        with conn() as c:
+            res = rewards.apply_profile(c, account_id, catalog_key)
+    except rewards.RewardsError as e:
+        return _rw_redirect(account_id, error=str(e))
+    msg = f"Set up as {res['card']['name']}."
+    if res["unmapped"]:
+        msg += f" Map these to your categories on the rules below: {', '.join(res['unmapped'])}."
+    return _rw_redirect(account_id, msg=msg)
+
+
+@app.post("/accounts/{account_id:int}/rewards")
+async def card_settings(request: Request, account_id: int):
+    form = await request.form()
+    try:
+        name = (form.get("card_name") or "").strip() or "Card"
+        network = form.get("network") if form.get("network") in rewards.NETWORKS else "Other"
+        unit = form.get("unit") if form.get("unit") in rewards.UNITS else "cash"
+        cpp = _float(form.get("cpp") or "1", "Value per point")
+        base = _float(form.get("base_rate") or "1", "Base rate")
+        fee = _cents(form.get("annual_fee")) or 0
+        with conn() as c:
+            if c.execute("SELECT type FROM accounts WHERE id = ?", (account_id,)).fetchone()["type"] != "credit":
+                raise rewards.RewardsError("Rewards can only be set up on credit accounts.")
+            c.execute("""INSERT INTO card_programs(account_id, card_name, network, unit, cpp, base_rate, annual_fee_cents)
+                         VALUES (?,?,?,?,?,?,?) ON CONFLICT(account_id) DO UPDATE SET card_name=excluded.card_name,
+                         network=excluded.network, unit=excluded.unit, cpp=excluded.cpp, base_rate=excluded.base_rate,
+                         annual_fee_cents=excluded.annual_fee_cents""", (account_id, name, network, unit, cpp, base, fee))
+    except rewards.RewardsError as e:
+        return _rw_redirect(account_id, error=str(e))
+    return _rw_redirect(account_id, msg="Card settings saved.")
+
+
+@app.post("/accounts/{account_id:int}/rewards/remove")
+def card_remove(account_id: int):
+    with conn() as c:
+        c.execute("DELETE FROM card_programs WHERE account_id = ?", (account_id,))
+    return _rw_redirect(account_id, msg="Rewards removed from this account.")
+
+
+def _rule_values(form) -> tuple:
+    label = (form.get("label") or "").strip() or "Bonus"
+    rate = _float(form.get("rate") or "", "Rate")
+    ids = [str(_int(v)) for v in form.getlist("category_ids") if _int(v)]
+    merchants = "|".join(m.strip() for m in (form.get("merchants") or "").replace(",", "|").split("|") if m.strip())
+    exclude = "|".join(m.strip() for m in (form.get("exclude") or "").replace(",", "|").split("|") if m.strip())
+    if not ids and not merchants:
+        raise rewards.RewardsError("A bonus rule needs at least one category or merchant.")
+    cap = _cents(form.get("cap"))
+    period = form.get("cap_period") if form.get("cap_period") in ("month", "quarter", "year") else None
+    if cap and not period:
+        raise rewards.RewardsError("Pick whether the cap is per month, quarter or year.")
+    group = (form.get("cap_group") or "").strip() or None
+    start = form.get("start_date") or None
+    end = form.get("end_date") or None
+    for d in (start, end):
+        if d and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d):
+            raise rewards.RewardsError("Dates must be yyyy-mm-dd.")
+    needs = 1 if form.get("needs_activation") else 0
+    activated = 1 if (form.get("activated") or not needs) else 0
+    return (label, rate, ",".join(ids) or None, merchants or None, exclude or None, cap if period else None,
+            period if cap else None, group, start, end, needs, activated)
+
+
+@app.post("/accounts/{account_id:int}/rewards/rules")
+async def card_rule_add(request: Request, account_id: int):
+    form = await request.form()
+    try:
+        vals = _rule_values(form)
+        with conn() as c:
+            if not c.execute("SELECT 1 FROM card_programs WHERE account_id = ?", (account_id,)).fetchone():
+                raise rewards.RewardsError("Pick a card or save card settings first.")
+            c.execute("""INSERT INTO earn_rules(label, rate, category_ids, merchants, exclude, cap_cents, cap_period,
+                         cap_group, start_date, end_date, needs_activation, activated, account_id)
+                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""", (*vals, account_id))
+    except rewards.RewardsError as e:
+        return _rw_redirect(account_id, error=str(e))
+    return _rw_redirect(account_id, msg="Bonus rule added.")
+
+
+@app.post("/rewards/rules/{rule_id:int}")
+async def card_rule_update(request: Request, rule_id: int):
+    form = await request.form()
+    with conn() as c:
+        row = c.execute("SELECT account_id FROM earn_rules WHERE id = ?", (rule_id,)).fetchone()
+    if not row:
+        raise HTTPException(404)
+    try:
+        vals = _rule_values(form)
+        with conn() as c:
+            c.execute("""UPDATE earn_rules SET label=?, rate=?, category_ids=?, merchants=?, exclude=?, cap_cents=?,
+                         cap_period=?, cap_group=?, start_date=?, end_date=?, needs_activation=?, activated=?,
+                         unmapped=NULL WHERE id=?""", (*vals, rule_id))
+    except rewards.RewardsError as e:
+        return _rw_redirect(row["account_id"], error=str(e), anchor=f"#rule{rule_id}")
+    return _rw_redirect(row["account_id"], msg="Rule saved.", anchor=f"#rule{rule_id}")
+
+
+@app.post("/rewards/rules/{rule_id:int}/delete")
+def card_rule_delete(rule_id: int):
+    with conn() as c:
+        row = c.execute("SELECT account_id FROM earn_rules WHERE id = ?", (rule_id,)).fetchone()
+        if not row:
+            raise HTTPException(404)
+        c.execute("DELETE FROM earn_rules WHERE id = ?", (rule_id,))
+    return _rw_redirect(row["account_id"], msg="Rule deleted.")
+
+
+@app.post("/rewards/rules/{rule_id:int}/activate")
+def card_rule_activate(request: Request, rule_id: int):
+    with conn() as c:
+        c.execute("UPDATE earn_rules SET activated = 1 WHERE id = ?", (rule_id,))
+    return back(request, "/rewards")
+
+
+@app.get("/rewards", response_class=HTMLResponse)
+def rewards_page(request: Request, period: str = "ytd", start: str | None = None, end: str | None = None):
+    with conn() as c:
+        s, e = reports.period_range(period, start, end)
+        if period == "all":
+            b = reports.data_bounds(c)
+            s, e = b if b else (date.today().replace(day=1).isoformat(), date.today().isoformat())
+        e = min(e, date.today().isoformat()) if e > date.today().isoformat() and s <= date.today().isoformat() else e
+        summ = rewards.summarize(c, s, e)
+        recs = rewards.recommendations(c)
+        alerts = rewards.alerts(c)
+        credit_accounts = c.execute("""SELECT a.id, a.name, cp.card_name FROM accounts a
+                                       LEFT JOIN card_programs cp ON cp.account_id = a.id
+                                       WHERE a.type = 'credit' ORDER BY a.name""").fetchall()
+        pending = c.execute("""SELECT r.id, r.label, a.name FROM earn_rules r JOIN accounts a ON a.id = r.account_id
+                               WHERE r.needs_activation = 1 AND r.activated = 0
+                                 AND (r.end_date IS NULL OR r.end_date >= ?)""", (date.today().isoformat(),)).fetchall()
+    months = reports.months_between(s, e)
+    progs = sorted(summ["programs"].values(), key=lambda p: p.account_name)
+    cls = [f"s{i + 1}" if i < 7 else "s-other" for i in range(len(progs))]
+    chart = charts.columns([_mlabel(m) for m in months], [
+        {"name": p.account_name, "cls": cls[i], "values": [int(summ["monthly"].get(m, {}).get(p.account_id, 0)) for m in months]}
+        for i, p in enumerate(progs)]) if progs and months else None
+    legend_items = [{"cls": cls[i], "label": p.account_name} for i, p in enumerate(progs)]
+    return render(request, "rewards.html", summ=summ, recs=recs, alerts=alerts, credit_accounts=credit_accounts,
+                  pending=pending, period=period, periods=reports.PERIODS, start=s, end=e, chart=chart,
+                  legend_items=legend_items)

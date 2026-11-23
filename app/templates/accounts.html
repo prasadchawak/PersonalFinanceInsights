@@ -30,7 +30,8 @@
       <td><input name="institution" value="{{ a.institution or '' }}" form="acct{{ a.id }}" size="14"></td>
       <td><select name="type" form="acct{{ a.id }}">{% for t in types %}<option {{ 'selected' if t == a.type }}>{{ t }}</option>{% endfor %}</select></td>
       <td><input name="opening_balance" value="{{ '%.2f'|format(a.opening_balance_cents / 100) }}" form="acct{{ a.id }}" size="10" inputmode="decimal"></td>
-      <td class="num"><a href="/transactions?account={{ a.id }}">{{ a.tx_count }}</a></td>
+      <td class="num"><a href="/transactions?account={{ a.id }}">{{ a.tx_count }}</a>
+          {% if a.type == 'credit' %}<br><a class="small rwlink" href="/accounts/{{ a.id }}/rewards">{{ '💳 ' ~ card_names[a.id] if a.id in card_names else '💳 set up rewards' }}</a>{% endif %}</td>
       <td class="num {{ 'neg' if a.balance_cents < 0 }}">{{ a.balance_cents|money }}</td>
       <td><form method="post" action="/accounts/{{ a.id }}" id="acct{{ a.id }}" class="inline"><button class="btn">Save</button></form></td>
     </tr>

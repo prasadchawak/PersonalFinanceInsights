@@ -126,6 +126,22 @@ def main(target: str) -> None:
         c.post(f"/transactions/{tid}/split", data={"category_id": [cat("Household"), cat("Groceries")],
                                                    "amount": [f"{part / 100:.2f}", "25.00"],
                                                    "memo": ["", "snacks"], "action": "save"})
+        # credit card rewards: the main card plus two more cards with a little spending each
+        c.post("/accounts/2/rewards/apply", data={"catalog_key": "chase-freedom-unlimited"})
+        c.post("/accounts", data={"name": "Grocery Card", "institution": "Sample Card Co", "type": "credit",
+                                  "opening_balance": "0"})
+        c.post("/accounts", data={"name": "Rotating 5% Card", "institution": "Sample Card Co", "type": "credit",
+                                  "opening_balance": "0"})
+        c.post("/accounts/4/rewards/apply", data={"catalog_key": "amex-bcp"})
+        c.post("/accounts/5/rewards/apply", data={"catalog_key": "discover-it"})
+        with db.connect() as conn:
+            conn.execute("UPDATE earn_rules SET activated = 1 WHERE account_id = 5")
+        recent = [(today - timedelta(days=d), a, n) for d, a, n in
+                  [(40, -38.20, "STREAMFLIX"), (25, -64.10, "FRESHMART GROCERY"), (9, -15.49, "STREAMFLIX")]]
+        c.post("/import", data={"account_id": "4"}, files={"file": ("grocery-card.ofx", ofx(recent))})
+        dining = [(today - timedelta(days=d), -round(random.uniform(18, 60), 2), "TACO PALACE") for d in (33, 21, 12, 4)]
+        c.post("/import", data={"account_id": "5"}, files={"file": ("rotating-card.ofx", ofx(dining))})
+        c.post("/rules/apply", data={"scope": "uncategorized"})
         # a second organisation
         c.post("/orgs", data={"name": "Rental Property"})
         c.post("/accounts", data={"name": "Rental Checking", "type": "checking", "opening_balance": "2500"})  # now open: Rental

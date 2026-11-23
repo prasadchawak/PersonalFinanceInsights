@@ -47,7 +47,7 @@ def test_delete_account_removes_everything_for_it(client):
 # ---------- sorting
 
 def amounts(html):
-    return [m for m in re.findall(r'class="num nowrap (?:neg|pos)">(-?\$[\d,.]+)<', html)]
+    return [m for m in re.findall(r'class="num nowrap (?:neg|pos)">(-?\$[\d,.]+)\s*<', html)]
 
 
 def test_sort_by_each_column(client):

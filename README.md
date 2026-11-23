@@ -21,7 +21,7 @@ On macOS or Linux, run `./run.sh` instead.
 
 All screenshots use made-up demo data (see [Try it with demo data](#try-it-with-demo-data)).
 
-**Contents:** [Getting started](#getting-started) · [Importing](#importing-statements) · [Transactions](#working-with-transactions) · [Splitting](#splitting-a-transaction) · [Rules](#rules) · [Categories](#categories) · [Budgets](#budgets) · [Reports](#reports) · [Leaving money out of reports](#leaving-money-out-of-reports) · [Organisations](#organisations) · [Troubleshooting](#troubleshooting)
+**Contents:** [Getting started](#getting-started) · [Importing](#importing-statements) · [Transactions](#working-with-transactions) · [Splitting](#splitting-a-transaction) · [Rules](#rules) · [Categories](#categories) · [Budgets](#budgets) · [Reports](#reports) · [Card rewards](#credit-card-rewards) · [Leaving money out of reports](#leaving-money-out-of-reports) · [Organisations](#organisations) · [Troubleshooting](#troubleshooting)
 
 ### Getting started
 
@@ -110,6 +110,39 @@ Every report has a period picker (this month … all time, or custom dates), an 
 
 <img src="docs/screenshots/report-merchants.png" alt="Top merchants as a bar chart with counts, averages and totals" width="900">
 
+### Credit card rewards
+
+Estimates what each credit card purchase earns, which card to use for what, and what you're missing. It works **entirely offline**: rewards are worked out from card terms plus your own transactions, and nothing is fetched or sent anywhere.
+
+**Setting up a card**
+1. On **Accounts**, any account with type **credit** shows **💳 set up rewards**. You can also start from the **Rewards** tab.
+2. Pick the card from the built-in list: **37 popular US cards** (Chase, Amex, Citi, Capital One, Wells Fargo, Bank of America, Discover, U.S. Bank, Apple, Robinhood, and airline and hotel cards) plus generic flat-rate templates. The account's name pre-selects the card when it can.
+3. Check the **bonus rules** it fills in: rate, categories (each includes its subcategories), merchants, a cap per month, quarter or year, dates, and whether the bonus needs activation. Edit or add rules to match your card agreement.
+4. In **Card settings**, set the **value per point** for points and miles cards (so 1.5¢ Delta miles and 1¢ cash back compare fairly), the network, the annual fee, and any boost. For example, Bank of America Preferred Rewards +75% is entered as a value of 1.75.
+
+<img src="docs/screenshots/card-setup.png" alt="Card setup: choose the card, card settings, and its bonus rules with caps" width="900">
+
+**How earnings are estimated**
+- A purchase earns the highest matching rate until that rule's cap is used up for the period, then the next rate, and finally the base rate. A purchase that crosses a cap is split at the cap. Rules with the same *shared cap name* share one cap, as with Bank of America's choice category plus groceries.
+- **Refunds** take back what they earned. **Card payments and transfers** earn nothing. **Split** transactions earn per part. Transactions you've **⊘ excluded** from reports still earn, because exclusion is about budgeting, not about what the card pays you.
+- **Rotating 5% cards** need each quarter's categories added, with dates, the $1,500 cap and "needs activation". The Rewards page reminds you when a quarter has none, when a bonus isn't activated, when a cap is nearly used, when a card hasn't been used for 5 months (issuers may close it), and when card terms are more than 6 months old.
+- Cards are only suggested where they're accepted. For example, Costco US takes Visa only.
+
+<img src="docs/screenshots/card-rotating-rule.png" alt="A rotating 5% quarter: dated rule, quarterly cap, activation" width="900">
+
+**The Rewards tab**
+- **Which card to use, right now:** for what you actually buy on your cards, the card that pays most today, taking remaining caps and end dates into account, plus the runner-up. The top five also appear on the **Overview**.
+- **By card:** spending, estimated rewards, effective return %, annual fee, net value for the period, and last used date.
+- **Missed rewards:** by category and by merchant, compared with the best card you hold for each purchase (that card's caps included). Spending from checking, such as rent, isn't counted as missed.
+
+<img src="docs/screenshots/rewards.png" alt="Rewards page: totals, which card to use, by card, by month, missed by category and merchant" width="900">
+
+On **Transactions**, each card purchase shows its estimated reward, and **⚑** marks one where another of your cards would have earned more. Hover over it to see which card.
+
+<img src="docs/screenshots/transactions-rewards.png" alt="Transactions with estimated reward under each card purchase and a flag where another card pays more" width="900">
+
+> **About accuracy:** these are estimates. Issuers decide rewards using the merchant's code (MCC), which bank exports rarely include, so the app relies on your categories and on merchant names. Caps use calendar periods, while some issuers use billing cycles. The built-in card terms were checked in November 2026 and ⚠ marks cards with a detail that couldn't be confirmed. Always compare against your card agreement. The list lives in [`tools/build_card_catalog.py`](tools/build_card_catalog.py) and contains public product terms only, never anyone's cards. To update it, edit that file and run `python tools/build_card_catalog.py`.
+
 ### Leaving money out of reports
 
 Some money would be counted twice. Example: you already count $400 a month going into a savings fund. If you later pay a $640 car repair *from* that fund and count it too, the same money shows up twice. **⊘ Exclude** the repair, and it stays out of reports and budgets. You can exclude:
@@ -135,6 +168,7 @@ Use organisations to keep separate books, for example for another person, a rent
 | CSV amounts are backwards | Delete that layout under *Import → Saved CSV layouts*, re-import, and tick **Flip sign**. |
 | I imported the wrong file | *Import → history → Undo* removes everything that import added. |
 | Page says *Cross-site request blocked* | Open the app at `http://127.0.0.1:8765` (not another address or a bookmark to an old port). |
+| A card's rewards look wrong | Open the card from **Rewards → By card** and check its bonus rules: categories (anything shown as *needs a category* isn't mapped yet), the cap and period, dates, and whether the bonus is marked **activated**. Purchases need categories to match category bonuses. |
 | Port 8765 is already in use | `set PFI_PORT=8766` then `run.bat`. |
 | Starting fresh / moving computers | Stop the app and copy the whole `data` folder. Run `backup.bat` before any upgrade. |
 
@@ -149,7 +183,7 @@ run.bat
 
 (Run `run.bat` once first so `.venv` exists.)
 
-This builds a separate folder of made-up accounts and transactions, which are the ones in these screenshots. Your real `data` folder isn't touched. Delete `demo-data` when you're done.
+This builds a separate folder of made-up accounts, transactions and three demo credit cards with rewards set up, which are the ones in these screenshots. To regenerate the screenshots, see [`tools/take_screenshots.py`](tools/take_screenshots.py). Your real `data` folder isn't touched. Delete `demo-data` when you're done.
 
 ## First use (detailed reference)
 
@@ -208,6 +242,8 @@ app/
   importers/csv_import.py   header detection, column guessing, mapping-driven parsing
   rules.py           first-match categorization rules
   splits.py          split transactions
+  rewards.py         credit card rewards: earn rules, caps, best card, missed rewards, alerts
+  data/card_catalog.json   built-in card terms (generated by tools/build_card_catalog.py)
   budgets.py         monthly budgets (default + per-month override, parent roll-up)
   categories.py      3-level category tree: paths, roll-ups, safe rename/move/delete
   reports.py         report queries (period ranges, roll-ups, cash flow, net worth)
@@ -225,7 +261,7 @@ To run the tests: `pip install -r requirements-dev.txt` then `pytest`.
 
 - **Phase 2:** monthly budgets compared with actual spending
 - **Phase 3:** PDF export of reports
-- **Phase 4:** credit-card rewards tracking, mortgage extra-payment scenarios
+- **Phase 4:** mortgage extra-payment scenarios
 - **Phase 5:** Docker image, passkey sign-in, encrypted backups, home-server deployment (Option 2)
 
 ## License

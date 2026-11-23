@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% from "_macros.html" import legend %}
+{% block title %}Rewards{% endblock %}
+{% macro pct(v) %}{{ '%.2f'|format(v) }}%{% endmacro %}
+{% block content %}
+<h1>Card rewards</h1>
+
+{% if not summ.programs %}
+<section class="card empty">
+  <h2>Set up your credit cards</h2>
+  <p>Pick each card's terms from a built-in list of popular cards (or enter your own). The app then estimates what every purchase earns,
+     which card to use for what, and what you're missing. It works entirely offline.</p>
+  {% if credit_accounts %}
+    <p>{% for a in credit_accounts %}<a class="btn" href="/accounts/{{ a.id }}/rewards">Set up {{ a.name }}</a> {% endfor %}</p>
+  {% else %}
+    <p class="muted">First add a credit card account (type <b>credit</b>) on the <a href="/accounts">Accounts</a> page.</p>
+  {% endif %}
+</section>
+{% else %}
+
+<form method="get" class="filters">
+  <select name="period" class="autosubmit period">
+    {% for k, label in periods %}<option value="{{ k }}" {{ 'selected' if k == period }}>{{ label }}</option>{% endfor %}
+  </select>
+  <span class="custom-range {{ 'hidden' if period != 'custom' }}">
+    <input type="date" name="start" value="{{ start }}"> to <input type="date" name="end" value="{{ end }}"></span>
+  <button class="btn">Show</button>
+</form>
+<p class="muted small">{{ start }} to {{ end }}. These are estimates based on your card terms and categories. Issuers decide rewards using merchant codes, so small differences are normal.</p>
+
+<div class="tiles">
+  <div class="tile"><span>Estimated rewards earned</span><b>{{ summ.earned|int|money }}</b></div>
+  <div class="tile"><span>Effective return on card spending</span><b>{{ pct(100 * summ.earned / summ.card_spend) if summ.card_spend else '—' }}</b></div>
+  <div class="tile"><span>With the best card every time</span><b>{{ summ.best|int|money }}</b></div>
+  <div class="tile"><span>Missed</span><b class="{{ 'neg' if summ.missed >= 100 }}">{{ summ.missed|int|money }}</b></div>
+</div>
+
+{% if alerts or pending %}
+<section class="card">
+  <h2>To do</h2>
+  <ul class="alerts">
+    {% for p in pending %}<li class="warn">⚠ {{ p.name }}: “{{ p.label }}” needs activation with the issuer.
+      <form method="post" action="/rewards/rules/{{ p.id }}/activate" class="inline"><button class="btn small">I've activated it</button></form></li>{% endfor %}
+    {% for a in alerts if 'activate “' not in a.text %}<li class="{{ a.level }}">{{ '⚠' if a.level == 'warn' else 'ℹ' }} {{ a.text }}
+      <a class="small" href="/accounts/{{ a.account_id }}/rewards">open card →</a></li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Which card to use, right now</h2>
+  <p class="muted small">Based on what you've bought on your cards over the last four months. Remaining caps and end dates are taken into account.</p>
+  {% if recs %}
+  <table class="recs">
+    <thead><tr><th>For</th><th>Use</th><th class="num">Earns</th><th>Then / instead</th></tr></thead>
+    {% for r in recs %}
+    <tr><td>{{ r.category }}<br><small class="muted">e.g. {{ r.merchant }}</small></td>
+        <td><b>{{ r.best.program.account_name }}</b><br><small class="muted">{{ r.best.rule.label if r.best.rule else 'base rate' }}
+          {% if r.best.cap %} · {{ r.best.cap.left|money }} left this {{ r.best.cap.period }}{% endif %}
+          {% if r.best.rule and r.best.rule.end %} · until {{ r.best.rule.end }}{% endif %}</small></td>
+        <td class="num"><b>{{ pct(r.best.pct) }}</b></td>
+        <td class="small">{% if r.runner_up %}{{ r.runner_up.program.account_name }} · {{ pct(r.runner_up.pct) }}{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">No recent card purchases yet.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>By card</h2>
+  <table>
+    <thead><tr><th>Card</th><th class="num">Spending</th><th class="num">Est. rewards</th><th class="num">Return</th><th class="num">Annual fee</th><th class="num">Net for period</th><th>Last used</th></tr></thead>
+    {% for c in summ.by_card %}{% set p = c.program %}
+    <tr><td><a href="/accounts/{{ p.account_id }}/rewards">{{ p.account_name }}</a><br><small class="muted">{{ p.card_name }}{% if p.unit != 'cash' %} · {{ p.unit }} at {{ '%g'|format(p.cpp) }}¢{% endif %}</small></td>
+        <td class="num">{{ c.spend|money }}</td><td class="num">{{ c.earned|int|money }}</td>
+        <td class="num">{{ pct(c.rate) if c.rate is not none else '—' }}</td>
+        <td class="num">{{ p.fee|money if p.fee else '—' }}</td>
+        <td class="num {{ 'neg' if c.net < 0 }}">{{ c.net|int|money }}</td>
+        <td class="small">{{ c.last_used or 'not in this period' }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="muted small">Net = estimated rewards minus the share of the annual fee for this period. Statement credits and perks aren't counted.</p>
+</section>
+
+{% if chart %}
+<section class="card">
+  <h2>Estimated rewards by month</h2>
+  {{ legend(legend_items) }}
+  {{ chart }}
+</section>
+{% endif %}
+
+<div class="grid2">
+  <section class="card">
+    <h2>Missed, by category</h2>
+    {% if summ.missed_by_category %}
+    <table><thead><tr><th>Category</th><th class="num">Missed</th><th>Better card</th></tr></thead>
+      {% for m in summ.missed_by_category %}<tr><td>{{ m.label }}</td><td class="num neg">{{ m.missed|int|money }}</td><td class="small">{{ m.best_card }}</td></tr>{% endfor %}
+    </table>{% else %}<p class="muted">Nothing missed. Every purchase went on your best card.</p>{% endif %}
+  </section>
+  <section class="card">
+    <h2>Missed, by merchant</h2>
+    {% if summ.missed_by_merchant %}
+    <table><thead><tr><th>Merchant</th><th class="num">Missed</th><th>Better card</th></tr></thead>
+      {% for m in summ.missed_by_merchant %}<tr><td>{{ m.label }}</td><td class="num neg">{{ m.missed|int|money }}</td><td class="small">{{ m.best_card }}</td></tr>{% endfor %}
+    </table>{% else %}<p class="muted">Nothing missed.</p>{% endif %}
+  </section>
+</div>
+<p class="muted small">"Missed" compares each card purchase with the card you hold that would have paid most at that moment, counting that card's caps.
+  Spending from checking (like rent) isn't included. Card payments and transfers earn nothing. Refunds take back what they earned.</p>
+{% endif %}
+{% endblock %}

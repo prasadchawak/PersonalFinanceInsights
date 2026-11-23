@@ -212,3 +212,27 @@ section.card { position: relative; }
 details.ruleedit[open] form { right: 1rem; left: auto; width: min(860px, calc(100% - 2rem)); }
 details.ruleedit[open] form p.hint { margin-right: 0; }
 fieldset.conds { min-width: 0; }   /* fieldsets default to min-content width and can overflow their box */
+
+/* ---------- rewards */
+small.rw { color: var(--pos); font-weight: 500; }
+small.rw.miss { color: var(--warn); }
+a.rwlink { white-space: nowrap; }
+ul.alerts { list-style: none; padding: 0; margin: 0; }
+ul.alerts li { padding: .45rem .2rem; border-bottom: 1px solid var(--line); }
+ul.alerts li:last-child { border-bottom: 0; }
+ul.alerts li.warn { color: var(--warn); }
+table.recs td { vertical-align: middle; }
+table.earnrules tr.inactive td { opacity: .7; }
+select.multi { min-width: 15rem; }
+
+/* Nine nav items: keep the top bar on one line on laptop screens. */
+.top { gap: 1rem; padding: .6rem 1.2rem; }
+nav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+nav a { padding: .35rem .55rem; white-space: nowrap; font-size: .94rem; }
+.brand { white-space: nowrap; }
+@media (max-width: 1100px) { .local { display: none; } }
+table.earnrules tr.editrow td { padding-top: 0; border-bottom: 1px solid var(--line); }
+table.earnrules tr:has(+ tr.editrow) td { border-bottom: 0; }
+details.rowedit summary { cursor: pointer; color: var(--accent); font-size: .82rem; list-style: none; }
+details.rowedit[open] { background: var(--bg); border-radius: 8px; padding: .6rem .8rem; margin-bottom: .4rem; }
+details.rowedit[open] summary { margin-bottom: .6rem; }

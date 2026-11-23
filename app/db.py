@@ -105,6 +105,37 @@ CREATE TABLE IF NOT EXISTS budgets (
     UNIQUE (category_id, month)
 );
 
+-- Credit card rewards: one program per credit account, with earn rules. See rewards.py.
+CREATE TABLE IF NOT EXISTS card_programs (
+    account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+    catalog_key TEXT,                     -- which catalog card it started from (informational)
+    card_name TEXT NOT NULL,
+    network TEXT NOT NULL DEFAULT 'Other',
+    unit TEXT NOT NULL DEFAULT 'cash',    -- cash | points | miles
+    cpp REAL NOT NULL DEFAULT 1.0,        -- value of one unit in cents
+    base_rate REAL NOT NULL DEFAULT 1.0,  -- units per $1 when no earn rule applies
+    annual_fee_cents INTEGER NOT NULL DEFAULT 0,
+    terms_checked TEXT,                   -- e.g. 2026-11
+    notes TEXT
+);
+CREATE TABLE IF NOT EXISTS earn_rules (
+    id INTEGER PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES card_programs(account_id) ON DELETE CASCADE,
+    label TEXT NOT NULL,
+    rate REAL NOT NULL,                   -- units per $1
+    category_ids TEXT,                    -- comma-separated category ids (each includes its subcategories)
+    merchants TEXT,                       -- '|'-separated: description must contain one of these
+    exclude TEXT,                         -- '|'-separated: description must contain none of these
+    cap_cents INTEGER,                    -- spend cap at this rate per period (NULL = no cap)
+    cap_period TEXT CHECK (cap_period IN ('month','quarter','year') OR cap_period IS NULL),
+    cap_group TEXT,                       -- rules sharing a group share one cap
+    start_date TEXT, end_date TEXT,       -- active window (inclusive), NULL = always
+    needs_activation INTEGER NOT NULL DEFAULT 0,
+    activated INTEGER NOT NULL DEFAULT 1,
+    unmapped TEXT                         -- catalog category names not found in this organisation
+);
+CREATE INDEX IF NOT EXISTS ix_earn_acct ON earn_rules(account_id);
+
 -- Every condition of a rule must match (AND). See rules.py for the fields.
 CREATE TABLE IF NOT EXISTS rule_conditions (
     id INTEGER PRIMARY KEY,
