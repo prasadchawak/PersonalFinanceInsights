@@ -206,3 +206,9 @@ tr.excl td:first-child, tr.excl td:last-child { opacity: 1; }
 .excltag { display: inline-block; font-size: .75rem; padding: 0 .45rem; border-radius: 999px; border: 1px dashed var(--muted); color: var(--muted); }
 .bulksep { width: 1px; height: 1.6rem; background: var(--line); margin: 0 .2rem; }
 .cattree tr.excl td.catname a { text-decoration: line-through; text-decoration-color: var(--muted); }
+
+/* Pop-up editors are positioned inside their card so they never run off the page. */
+section.card { position: relative; }
+details.ruleedit[open] form { right: 1rem; left: auto; width: min(860px, calc(100% - 2rem)); }
+details.ruleedit[open] form p.hint { margin-right: 0; }
+fieldset.conds { min-width: 0; }   /* fieldsets default to min-content width and can overflow their box */
