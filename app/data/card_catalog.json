@@ -1,0 +1,1293 @@
+{
+ "checked": "2026-11",
+ "cards": [
+  {
+   "key": "citi-double-cash",
+   "name": "Citi Double Cash",
+   "issuer": "Citi",
+   "network": "Mastercard",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 2.0,
+   "rules": [
+    {
+     "label": "Citi Travel hotels, cars, attractions",
+     "rate": 5,
+     "merchants": [
+      "CITI TRAVEL"
+     ]
+    }
+   ],
+   "checked": "2026-11"
+  },
+  {
+   "key": "wf-active-cash",
+   "name": "Wells Fargo Active Cash",
+   "issuer": "Wells Fargo",
+   "network": "Visa",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 2.0,
+   "rules": [],
+   "checked": "2026-11"
+  },
+  {
+   "key": "c1-quicksilver",
+   "name": "Capital One Quicksilver",
+   "issuer": "Capital One",
+   "network": "Mastercard",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 1.5,
+   "rules": [
+    {
+     "label": "Capital One Travel hotels, rentals",
+     "rate": 5,
+     "merchants": [
+      "CAPITAL ONE TRAVEL",
+      "CAP ONE TRAVEL"
+     ]
+    }
+   ],
+   "checked": "2026-11"
+  },
+  {
+   "key": "bofa-unlimited-cash",
+   "name": "Bank of America Unlimited Cash Rewards",
+   "issuer": "Bank of America",
+   "network": "Visa",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 1.5,
+   "rules": [],
+   "checked": "2026-11",
+   "notes": "Preferred Rewards members earn 25\u201375% more: raise the point value (e.g. 1.75 for +75%)."
+  },
+  {
+   "key": "robinhood-gold",
+   "name": "Robinhood Gold Card",
+   "issuer": "Robinhood",
+   "network": "Visa",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 3.0,
+   "rules": [
+    {
+     "label": "Robinhood travel portal",
+     "rate": 5,
+     "merchants": [
+      "ROBINHOOD TRAVEL"
+     ]
+    }
+   ],
+   "checked": "2026-11",
+   "membership": "Requires Robinhood Gold ($50/yr) \u2014 add it as the annual fee if you'd not pay it otherwise."
+  },
+  {
+   "key": "apple-card",
+   "name": "Apple Card",
+   "issuer": "Goldman Sachs",
+   "network": "Mastercard",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 2.0,
+   "rules": [
+    {
+     "label": "Apple and select partners (Apple Pay)",
+     "rate": 3,
+     "merchants": [
+      "APPLE.COM",
+      "APPLE STORE",
+      "UBER",
+      "NIKE",
+      "WALGREENS"
+     ]
+    }
+   ],
+   "checked": "2026-11",
+   "notes": "Base set to 2% assuming Apple Pay; use 1 if you mostly use the physical card."
+  },
+  {
+   "key": "c1-savor",
+   "name": "Capital One Savor",
+   "issuer": "Capital One",
+   "network": "Mastercard",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Grocery stores (not superstores)",
+     "rate": 3,
+     "categories": [
+      "Groceries"
+     ],
+     "exclude": [
+      "WALMART",
+      "TARGET"
+     ]
+    },
+    {
+     "label": "Dining",
+     "rate": 3,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ]
+    },
+    {
+     "label": "Entertainment",
+     "rate": 3,
+     "categories": [
+      "Entertainment"
+     ]
+    },
+    {
+     "label": "Popular streaming",
+     "rate": 3,
+     "categories": [
+      "Streaming"
+     ]
+    },
+    {
+     "label": "Capital One Travel",
+     "rate": 5,
+     "merchants": [
+      "CAPITAL ONE TRAVEL"
+     ]
+    }
+   ],
+   "checked": "2026-11"
+  },
+  {
+   "key": "chase-freedom-unlimited",
+   "name": "Chase Freedom Unlimited",
+   "issuer": "Chase",
+   "network": "Visa",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 1.5,
+   "rules": [
+    {
+     "label": "Dining",
+     "rate": 3,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ]
+    },
+    {
+     "label": "Drugstores",
+     "rate": 3,
+     "categories": [
+      "Pharmacy"
+     ]
+    },
+    {
+     "label": "Chase Travel",
+     "rate": 5,
+     "merchants": [
+      "CHASE TRAVEL"
+     ]
+    }
+   ],
+   "checked": "2026-11"
+  },
+  {
+   "key": "chase-freedom-flex",
+   "name": "Chase Freedom Flex",
+   "issuer": "Chase",
+   "network": "Mastercard",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Dining",
+     "rate": 3,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ]
+    },
+    {
+     "label": "Drugstores",
+     "rate": 3,
+     "categories": [
+      "Pharmacy"
+     ]
+    },
+    {
+     "label": "Chase Travel",
+     "rate": 5,
+     "merchants": [
+      "CHASE TRAVEL"
+     ]
+    },
+    {
+     "label": "Q1 2027: grocery stores (not Walmart/Target), top streaming",
+     "rate": 5,
+     "categories": [
+      "Groceries",
+      "Streaming"
+     ],
+     "exclude": [
+      "WALMART",
+      "TARGET"
+     ],
+     "cap": 150000,
+     "period": "quarter",
+     "group": "rotating",
+     "start": "2027-01-01",
+     "end": "2027-03-31",
+     "activation": true
+    }
+   ],
+   "checked": "2026-11",
+   "notes": "5% quarterly categories on up to $1,500 combined; enter each new quarter.",
+   "rotating": true
+  },
+  {
+   "key": "discover-it",
+   "name": "Discover it Cash Back",
+   "issuer": "Discover",
+   "network": "Discover",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Q4 2026: restaurants, entertainment, utilities",
+     "rate": 5,
+     "categories": [
+      "Dining",
+      "Coffee",
+      "Entertainment",
+      "Utilities"
+     ],
+     "cap": 150000,
+     "period": "quarter",
+     "group": "rotating",
+     "start": "2026-10-01",
+     "end": "2026-12-31",
+     "activation": true
+    }
+   ],
+   "checked": "2026-11",
+   "notes": "5% quarterly categories on up to $1,500 combined (activation required); enter each new quarter.",
+   "rotating": true
+  },
+  {
+   "key": "amex-bcp",
+   "name": "Amex Blue Cash Preferred",
+   "issuer": "American Express",
+   "network": "Amex",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 9500,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "U.S. supermarkets",
+     "rate": 6,
+     "categories": [
+      "Groceries"
+     ],
+     "exclude": [
+      "WALMART",
+      "TARGET",
+      "COSTCO",
+      "SAMS CLUB",
+      "SAM'S CLUB",
+      "BJ'S",
+      "BJS WHOLESALE"
+     ],
+     "cap": 600000,
+     "period": "year",
+     "group": "supermarkets"
+    },
+    {
+     "label": "Select U.S. streaming",
+     "rate": 6,
+     "categories": [
+      "Streaming"
+     ]
+    },
+    {
+     "label": "U.S. gas stations",
+     "rate": 3,
+     "categories": [
+      "Fuel"
+     ]
+    },
+    {
+     "label": "Transit",
+     "rate": 3,
+     "categories": [
+      "Rideshare",
+      "Parking & Tolls"
+     ]
+    }
+   ],
+   "checked": "2026-11"
+  },
+  {
+   "key": "amex-bce",
+   "name": "Amex Blue Cash Everyday",
+   "issuer": "American Express",
+   "network": "Amex",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "U.S. supermarkets",
+     "rate": 3,
+     "categories": [
+      "Groceries"
+     ],
+     "exclude": [
+      "WALMART",
+      "TARGET",
+      "COSTCO",
+      "SAMS CLUB",
+      "SAM'S CLUB",
+      "BJ'S",
+      "BJS WHOLESALE"
+     ],
+     "cap": 600000,
+     "period": "year",
+     "group": "supermarkets"
+    },
+    {
+     "label": "U.S. online retail",
+     "rate": 3,
+     "merchants": [
+      "AMAZON",
+      "AMZN",
+      "ONLINE"
+     ],
+     "cap": 600000,
+     "period": "year",
+     "group": "online"
+    },
+    {
+     "label": "U.S. gas stations",
+     "rate": 3,
+     "categories": [
+      "Fuel"
+     ],
+     "cap": 600000,
+     "period": "year",
+     "group": "gas"
+    }
+   ],
+   "checked": "2026-11",
+   "verify": true
+  },
+  {
+   "key": "bofa-customized-cash",
+   "name": "Bank of America Customized Cash Rewards",
+   "issuer": "Bank of America",
+   "network": "Visa",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Choice category (set to dining \u2014 change to yours)",
+     "rate": 3,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ],
+     "cap": 250000,
+     "period": "quarter",
+     "group": "choice+grocery"
+    },
+    {
+     "label": "Grocery stores and wholesale clubs",
+     "rate": 2,
+     "categories": [
+      "Groceries"
+     ],
+     "cap": 250000,
+     "period": "quarter",
+     "group": "choice+grocery"
+    }
+   ],
+   "checked": "2026-11",
+   "notes": "Pick your 3% choice category on the rule. Preferred Rewards adds 25\u201375%: raise the point value (e.g. 1.75)."
+  },
+  {
+   "key": "citi-custom-cash",
+   "name": "Citi Custom Cash",
+   "issuer": "Citi",
+   "network": "Mastercard",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Top eligible category (set yours)",
+     "rate": 5,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ],
+     "cap": 50000,
+     "period": "month",
+     "group": "top"
+    }
+   ],
+   "checked": "2026-11",
+   "notes": "5% applies to your highest eligible category each billing cycle; set the rule to the one you use. Closed to new applicants since May 2026."
+  },
+  {
+   "key": "us-bank-altitude-go",
+   "name": "U.S. Bank Altitude Go",
+   "issuer": "U.S. Bank",
+   "network": "Visa",
+   "unit": "points",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Dining",
+     "rate": 4,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ]
+    },
+    {
+     "label": "Groceries",
+     "rate": 2,
+     "categories": [
+      "Groceries"
+     ]
+    },
+    {
+     "label": "Gas and EV charging",
+     "rate": 2,
+     "categories": [
+      "Fuel"
+     ]
+    },
+    {
+     "label": "Streaming",
+     "rate": 2,
+     "categories": [
+      "Streaming"
+     ]
+    }
+   ],
+   "checked": "2026-11",
+   "verify": true
+  },
+  {
+   "key": "wf-autograph",
+   "name": "Wells Fargo Autograph",
+   "issuer": "Wells Fargo",
+   "network": "Visa",
+   "unit": "points",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Restaurants",
+     "rate": 3,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ]
+    },
+    {
+     "label": "Travel",
+     "rate": 3,
+     "categories": [
+      "Travel"
+     ]
+    },
+    {
+     "label": "Gas stations",
+     "rate": 3,
+     "categories": [
+      "Fuel"
+     ]
+    },
+    {
+     "label": "Transit",
+     "rate": 3,
+     "categories": [
+      "Rideshare",
+      "Parking & Tolls"
+     ]
+    },
+    {
+     "label": "Streaming",
+     "rate": 3,
+     "categories": [
+      "Streaming"
+     ]
+    },
+    {
+     "label": "Phone plans",
+     "rate": 3,
+     "categories": [
+      "Phone & Internet"
+     ]
+    }
+   ],
+   "checked": "2026-11"
+  },
+  {
+   "key": "prime-visa",
+   "name": "Prime Visa (Amazon)",
+   "issuer": "Chase",
+   "network": "Visa",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Amazon, Whole Foods, Chase Travel",
+     "rate": 5,
+     "merchants": [
+      "AMAZON",
+      "AMZN",
+      "WHOLE FOODS",
+      "WHOLEFDS",
+      "CHASE TRAVEL"
+     ]
+    },
+    {
+     "label": "Gas stations",
+     "rate": 2,
+     "categories": [
+      "Fuel"
+     ]
+    },
+    {
+     "label": "Restaurants",
+     "rate": 2,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ]
+    },
+    {
+     "label": "Local transit",
+     "rate": 2,
+     "categories": [
+      "Rideshare",
+      "Parking & Tolls"
+     ]
+    }
+   ],
+   "checked": "2026-11",
+   "membership": "Requires Amazon Prime."
+  },
+  {
+   "key": "amazon-visa",
+   "name": "Amazon Visa (no Prime)",
+   "issuer": "Chase",
+   "network": "Visa",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Amazon, Whole Foods, Chase Travel",
+     "rate": 3,
+     "merchants": [
+      "AMAZON",
+      "AMZN",
+      "WHOLE FOODS",
+      "WHOLEFDS",
+      "CHASE TRAVEL"
+     ]
+    },
+    {
+     "label": "Gas stations",
+     "rate": 2,
+     "categories": [
+      "Fuel"
+     ]
+    },
+    {
+     "label": "Restaurants",
+     "rate": 2,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ]
+    },
+    {
+     "label": "Local transit",
+     "rate": 2,
+     "categories": [
+      "Rideshare",
+      "Parking & Tolls"
+     ]
+    }
+   ],
+   "checked": "2026-11"
+  },
+  {
+   "key": "costco-anywhere",
+   "name": "Costco Anywhere Visa (Citi)",
+   "issuer": "Citi",
+   "network": "Visa",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Costco gas",
+     "rate": 5,
+     "categories": [
+      "Fuel"
+     ],
+     "merchants": [
+      "COSTCO"
+     ],
+     "cap": 700000,
+     "period": "year",
+     "group": "gas"
+    },
+    {
+     "label": "Other gas and EV charging",
+     "rate": 4,
+     "categories": [
+      "Fuel"
+     ],
+     "exclude": [
+      "COSTCO"
+     ],
+     "cap": 700000,
+     "period": "year",
+     "group": "gas"
+    },
+    {
+     "label": "Restaurants",
+     "rate": 3,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ]
+    },
+    {
+     "label": "Eligible travel",
+     "rate": 3,
+     "categories": [
+      "Travel"
+     ]
+    },
+    {
+     "label": "Costco and Costco.com",
+     "rate": 2,
+     "merchants": [
+      "COSTCO"
+     ]
+    }
+   ],
+   "checked": "2026-11",
+   "membership": "Requires Costco membership; rewards paid once a year."
+  },
+  {
+   "key": "chase-sapphire-preferred",
+   "name": "Chase Sapphire Preferred",
+   "issuer": "Chase",
+   "network": "Visa",
+   "unit": "points",
+   "cpp": 1.0,
+   "annual_fee": 9500,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Chase Travel",
+     "rate": 5,
+     "merchants": [
+      "CHASE TRAVEL"
+     ]
+    },
+    {
+     "label": "Dining",
+     "rate": 3,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ]
+    },
+    {
+     "label": "Gas stations and EV charging",
+     "rate": 3,
+     "categories": [
+      "Fuel"
+     ]
+    },
+    {
+     "label": "Other travel",
+     "rate": 2,
+     "categories": [
+      "Travel",
+      "Parking & Tolls"
+     ]
+    }
+   ],
+   "checked": "2026-11",
+   "verify": true,
+   "notes": "Earn categories refreshed June 2026; check streaming/online grocery terms."
+  },
+  {
+   "key": "chase-sapphire-reserve",
+   "name": "Chase Sapphire Reserve",
+   "issuer": "Chase",
+   "network": "Visa",
+   "unit": "points",
+   "cpp": 1.0,
+   "annual_fee": 79500,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Chase Travel",
+     "rate": 8,
+     "merchants": [
+      "CHASE TRAVEL"
+     ]
+    },
+    {
+     "label": "Flights and hotels booked direct",
+     "rate": 4,
+     "categories": [
+      "Flights",
+      "Lodging"
+     ]
+    },
+    {
+     "label": "Dining",
+     "rate": 3,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ]
+    }
+   ],
+   "checked": "2026-11",
+   "verify": true
+  },
+  {
+   "key": "amex-gold",
+   "name": "American Express Gold",
+   "issuer": "American Express",
+   "network": "Amex",
+   "unit": "points",
+   "cpp": 1.0,
+   "annual_fee": 32500,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Restaurants worldwide",
+     "rate": 4,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ],
+     "cap": 5000000,
+     "period": "year",
+     "group": "dining"
+    },
+    {
+     "label": "U.S. supermarkets",
+     "rate": 4,
+     "categories": [
+      "Groceries"
+     ],
+     "exclude": [
+      "WALMART",
+      "TARGET",
+      "COSTCO",
+      "SAMS CLUB",
+      "SAM'S CLUB",
+      "BJ'S",
+      "BJS WHOLESALE"
+     ],
+     "cap": 2500000,
+     "period": "year",
+     "group": "supermarkets"
+    },
+    {
+     "label": "Flights booked direct or AmexTravel",
+     "rate": 3,
+     "categories": [
+      "Flights"
+     ]
+    }
+   ],
+   "checked": "2026-11"
+  },
+  {
+   "key": "amex-platinum",
+   "name": "American Express Platinum",
+   "issuer": "American Express",
+   "network": "Amex",
+   "unit": "points",
+   "cpp": 1.0,
+   "annual_fee": 89500,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Flights booked direct or AmexTravel",
+     "rate": 5,
+     "categories": [
+      "Flights"
+     ],
+     "cap": 50000000,
+     "period": "year",
+     "group": "flights"
+    },
+    {
+     "label": "Prepaid hotels on AmexTravel",
+     "rate": 5,
+     "merchants": [
+      "AMEX TRAVEL",
+      "AMEXTRAVEL"
+     ]
+    }
+   ],
+   "checked": "2026-11"
+  },
+  {
+   "key": "c1-venture",
+   "name": "Capital One Venture",
+   "issuer": "Capital One",
+   "network": "Visa",
+   "unit": "miles",
+   "cpp": 1.0,
+   "annual_fee": 9500,
+   "base": 2.0,
+   "rules": [
+    {
+     "label": "Capital One Travel hotels, rentals",
+     "rate": 5,
+     "merchants": [
+      "CAPITAL ONE TRAVEL"
+     ]
+    }
+   ],
+   "checked": "2026-11"
+  },
+  {
+   "key": "c1-venture-x",
+   "name": "Capital One Venture X",
+   "issuer": "Capital One",
+   "network": "Visa",
+   "unit": "miles",
+   "cpp": 1.0,
+   "annual_fee": 39500,
+   "base": 2.0,
+   "rules": [
+    {
+     "label": "Capital One Travel hotels and rental cars",
+     "rate": 10,
+     "merchants": [
+      "CAPITAL ONE TRAVEL"
+     ]
+    },
+    {
+     "label": "Capital One Travel flights",
+     "rate": 5,
+     "merchants": [
+      "CAPITAL ONE TRAVEL FLIGHT"
+     ]
+    }
+   ],
+   "checked": "2026-11"
+  },
+  {
+   "key": "citi-strata-premier",
+   "name": "Citi Strata Premier",
+   "issuer": "Citi",
+   "network": "Mastercard",
+   "unit": "points",
+   "cpp": 1.0,
+   "annual_fee": 9500,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Citi Travel hotels, cars, attractions",
+     "rate": 10,
+     "merchants": [
+      "CITI TRAVEL"
+     ]
+    },
+    {
+     "label": "Air travel and hotels",
+     "rate": 3,
+     "categories": [
+      "Flights",
+      "Lodging"
+     ]
+    },
+    {
+     "label": "Restaurants",
+     "rate": 3,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ]
+    },
+    {
+     "label": "Supermarkets",
+     "rate": 3,
+     "categories": [
+      "Groceries"
+     ]
+    },
+    {
+     "label": "Gas and EV charging",
+     "rate": 3,
+     "categories": [
+      "Fuel"
+     ]
+    }
+   ],
+   "checked": "2026-11"
+  },
+  {
+   "key": "delta-blue",
+   "name": "Delta SkyMiles Blue (Amex)",
+   "issuer": "American Express",
+   "network": "Amex",
+   "unit": "miles",
+   "cpp": 1.2,
+   "annual_fee": 0,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Delta purchases",
+     "rate": 2,
+     "merchants": [
+      "DELTA"
+     ]
+    },
+    {
+     "label": "Restaurants",
+     "rate": 2,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ]
+    }
+   ],
+   "checked": "2026-11"
+  },
+  {
+   "key": "delta-gold",
+   "name": "Delta SkyMiles Gold (Amex)",
+   "issuer": "American Express",
+   "network": "Amex",
+   "unit": "miles",
+   "cpp": 1.2,
+   "annual_fee": 15000,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Delta purchases",
+     "rate": 2,
+     "merchants": [
+      "DELTA"
+     ]
+    },
+    {
+     "label": "Restaurants",
+     "rate": 2,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ]
+    },
+    {
+     "label": "U.S. supermarkets",
+     "rate": 2,
+     "categories": [
+      "Groceries"
+     ]
+    }
+   ],
+   "checked": "2026-11",
+   "verify": true
+  },
+  {
+   "key": "citi-aadvantage-platinum",
+   "name": "Citi AAdvantage Platinum Select",
+   "issuer": "Citi",
+   "network": "Mastercard",
+   "unit": "miles",
+   "cpp": 1.4,
+   "annual_fee": 9900,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "American Airlines",
+     "rate": 2,
+     "merchants": [
+      "AMERICAN AIR",
+      "AA.COM"
+     ]
+    },
+    {
+     "label": "Restaurants",
+     "rate": 2,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ]
+    },
+    {
+     "label": "Gas stations",
+     "rate": 2,
+     "categories": [
+      "Fuel"
+     ]
+    }
+   ],
+   "checked": "2026-11",
+   "verify": true
+  },
+  {
+   "key": "united-explorer",
+   "name": "United Explorer",
+   "issuer": "Chase",
+   "network": "Visa",
+   "unit": "miles",
+   "cpp": 1.2,
+   "annual_fee": 15000,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "United purchases",
+     "rate": 2,
+     "merchants": [
+      "UNITED"
+     ]
+    },
+    {
+     "label": "Dining",
+     "rate": 2,
+     "categories": [
+      "Dining",
+      "Coffee"
+     ]
+    },
+    {
+     "label": "Hotel stays",
+     "rate": 2,
+     "categories": [
+      "Lodging"
+     ]
+    }
+   ],
+   "checked": "2026-11",
+   "verify": true
+  },
+  {
+   "key": "southwest-plus",
+   "name": "Southwest Rapid Rewards Plus",
+   "issuer": "Chase",
+   "network": "Visa",
+   "unit": "points",
+   "cpp": 1.3,
+   "annual_fee": 9900,
+   "base": 1.0,
+   "rules": [
+    {
+     "label": "Southwest purchases",
+     "rate": 2,
+     "merchants": [
+      "SOUTHWEST"
+     ]
+    },
+    {
+     "label": "Local transit and rideshare",
+     "rate": 2,
+     "categories": [
+      "Rideshare",
+      "Parking & Tolls"
+     ]
+    }
+   ],
+   "checked": "2026-11",
+   "verify": true
+  },
+  {
+   "key": "marriott-boundless",
+   "name": "Marriott Bonvoy Boundless",
+   "issuer": "Chase",
+   "network": "Visa",
+   "unit": "points",
+   "cpp": 0.75,
+   "annual_fee": 9500,
+   "base": 2.0,
+   "rules": [
+    {
+     "label": "Marriott hotels",
+     "rate": 6,
+     "merchants": [
+      "MARRIOTT",
+      "WESTIN",
+      "SHERATON",
+      "RITZ",
+      "COURTYARD",
+      "RESIDENCE INN"
+     ]
+    },
+    {
+     "label": "Grocery, gas, dining",
+     "rate": 3,
+     "categories": [
+      "Groceries",
+      "Fuel",
+      "Dining",
+      "Coffee"
+     ],
+     "cap": 600000,
+     "period": "year",
+     "group": "everyday"
+    }
+   ],
+   "checked": "2026-11"
+  },
+  {
+   "key": "hilton-honors-amex",
+   "name": "Hilton Honors (Amex, no fee)",
+   "issuer": "American Express",
+   "network": "Amex",
+   "unit": "points",
+   "cpp": 0.5,
+   "annual_fee": 0,
+   "base": 3.0,
+   "rules": [
+    {
+     "label": "Hilton hotels",
+     "rate": 7,
+     "merchants": [
+      "HILTON",
+      "HAMPTON",
+      "DOUBLETREE",
+      "EMBASSY SUITES"
+     ]
+    },
+    {
+     "label": "Restaurants, supermarkets, gas",
+     "rate": 5,
+     "categories": [
+      "Dining",
+      "Coffee",
+      "Groceries",
+      "Fuel"
+     ]
+    }
+   ],
+   "checked": "2026-11",
+   "verify": true
+  },
+  {
+   "key": "hilton-surpass",
+   "name": "Hilton Honors Surpass (Amex)",
+   "issuer": "American Express",
+   "network": "Amex",
+   "unit": "points",
+   "cpp": 0.5,
+   "annual_fee": 15000,
+   "base": 3.0,
+   "rules": [
+    {
+     "label": "Hilton hotels",
+     "rate": 12,
+     "merchants": [
+      "HILTON",
+      "HAMPTON",
+      "DOUBLETREE",
+      "EMBASSY SUITES"
+     ]
+    },
+    {
+     "label": "Restaurants, supermarkets, gas",
+     "rate": 6,
+     "categories": [
+      "Dining",
+      "Coffee",
+      "Groceries",
+      "Fuel"
+     ]
+    },
+    {
+     "label": "U.S. online retail",
+     "rate": 4,
+     "merchants": [
+      "AMAZON",
+      "AMZN"
+     ]
+    }
+   ],
+   "checked": "2026-11",
+   "verify": true
+  },
+  {
+   "key": "generic-1",
+   "name": "Generic: flat 1% cash back",
+   "issuer": "\u2014",
+   "network": "Other",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 1.0,
+   "rules": [],
+   "checked": "2026-11"
+  },
+  {
+   "key": "generic-1-5",
+   "name": "Generic: flat 1.5% cash back",
+   "issuer": "\u2014",
+   "network": "Other",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 1.5,
+   "rules": [],
+   "checked": "2026-11"
+  },
+  {
+   "key": "generic-2",
+   "name": "Generic: flat 2% cash back",
+   "issuer": "\u2014",
+   "network": "Other",
+   "unit": "cash",
+   "cpp": 1.0,
+   "annual_fee": 0,
+   "base": 2.0,
+   "rules": [],
+   "checked": "2026-11"
+  }
+ ]
+}
